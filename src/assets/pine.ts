@@ -1,34 +1,82 @@
 import { noise, type AsciiAsset, type AssetOptions, type AsciiCell } from './types.ts';
 import { GlyphShape } from './shapes.ts';
+import { drawBranch, drawTrunk, variation, type LeafPalette } from './trees/treePrimitives.ts';
+
+const BARK = ['#242723', '#48483a', '#6d654b', '#948064'] as const;
+const PALETTES: readonly LeafPalette[] = [
+  ['#14372b', '#2d593f', '#53774e', '#849568'],
+  ['#132f32', '#2a4e4d', '#496d67', '#7d9481'],
+  ['#1c4035', '#42664d', '#72906a', '#aec0a2'],
+];
+
+interface Bough {
+  cx: number;
+  top: number;
+  bottom: number;
+  halfWidth: number;
+  palette: LeafPalette;
+  seed: number;
+  phase: number;
+  time: number;
+  snowy: boolean;
+}
+
+/** One ragged tier: bright upper needles, dark drooping underside, open edges. */
+function needleBough(s: GlyphShape, bough: Bough): void {
+  const { cx, top, bottom, halfWidth, palette, seed, phase, time, snowy } = bough;
+  const height = bottom - top;
+  const lean = Math.sin(time * .8 + phase) * .72;
+  for (let y = top; y <= bottom; y++) {
+    const p = (y - top) / height;
+    const width = halfWidth * (.13 + .87 * Math.pow(p, .82));
+    for (let x = Math.floor(cx - width - 5); x <= Math.ceil(cx + width + 5); x++) {
+      const nx = (x - cx - lean) / Math.max(1, width);
+      const n = noise(x, y, seed);
+      const edge = .88 + Math.sin(y * .73 + phase) * .11 + (n - .5) * .15;
+      if (Math.abs(nx) > edge + .12) continue;
+      if (Math.abs(nx) > edge) {
+        if (n < .72) continue;
+        s.cell(x, y + (n > .9 ? 1 : 0), n > .9 ? '*' : "'", palette[3]);
+        continue;
+      }
+      if (p > .72 && n < .12) continue;
+      const light = .31 + (1 - p) * .35 - nx * .12 + (n - .5) * .13;
+      const shade = Math.max(0, Math.min(3, Math.floor(light * 4)));
+      const glyph = p < .2 ? (n > .5 ? '^' : '*') : p > .72 ? (n > .55 ? "'" : ';') : shade > 2 ? (n > .5 ? 'O' : '#') : shade > 1 ? (n > .5 ? '*' : 'x') : (n > .5 ? ';' : ':');
+      const snow = snowy && p < .28 && nx > -.45 && n > .3;
+      s.cell(x, y, snow ? (n > .8 ? '*' : '+') : glyph, snow ? '#dce5d7' : palette[shade]);
+    }
+  }
+}
 
 function generate(o: AssetOptions): AsciiCell[] {
   const s = new GlyphShape(110, 110, o.seed);
-  const bark = ['#212726', '#3d453c', '#626853', '#939079'];
-  // Bent trunk and branching silhouette, independent from world placement.
-  s.polygon([[51, 104], [59, 104], [56, 76], [50, 53], [54, 25], [49, 28], [44, 55], [49, 77]], bark, .8, '.:;|x#');
-  for (const [x, y, tipX, tipY] of [[50, 70, 19, 56], [49, 52, 82, 38], [51, 38, 38, 20], [53, 76, 91, 67]]) {
-    s.line(x, y, tipX, tipY, '#656b55', '/');
-    s.line(x, y + 1, tipX, tipY + 1, '#303d34', '-');
+  const variant = o.variant % PALETTES.length;
+  const baseX = 54 + variation(22, o.seed, 4);
+  drawTrunk(s, { x: baseX, y: 104, topX: 53 + variation(23, o.seed, 3), topY: 15, baseWidth: 13, topWidth: 3, palette: BARK, seed: o.seed, roots: 18 });
+  const tiers = [
+    [10, 41, 18], [26, 58, 29], [42, 74, 38], [57, 88, 46], [71, 97, 52],
+  ] as const;
+  for (let i = tiers.length - 1; i >= 0; i--) {
+    const [top, bottom, halfWidth] = tiers[i];
+    const cx = 54 + variation(i + 30, o.seed, 4);
+    const sway = Math.sin(o.time * .8 + i * .67) * .72;
+    drawBranch(s, baseX, Math.min(101, bottom - 5), cx - halfWidth * .68 + sway, bottom - 8, i > 2 ? 4 : 3, BARK, o.seed + i);
+    drawBranch(s, baseX, Math.min(101, bottom - 7), cx + halfWidth * .68 + sway, bottom - 10, i > 2 ? 4 : 3, BARK, o.seed + i + 10);
+    needleBough(s, {
+      cx, top, bottom, halfWidth: halfWidth * (.94 + noise(i, 7, o.seed) * .12),
+      palette: PALETTES[variant], seed: o.seed * 41 + i * 127,
+      phase: i * .67 + variation(i, o.seed, .5), time: o.time, snowy: variant === 2,
+    });
   }
-  const palette = o.variant === 1 ? ['#192b31', '#28464a', '#42635f', '#7a9281'] : ['#142b24', '#25483a', '#426750', '#789171'];
-  const clusters = [
-    [34, 21, 23, 11], [54, 16, 21, 12], [60, 28, 26, 12],
-    [22, 47, 21, 12], [42, 43, 25, 15], [77, 37, 25, 14], [92, 48, 16, 12],
-    [27, 58, 22, 14], [49, 61, 24, 13], [81, 64, 25, 13],
-  ];
-  for (let k = 0; k < clusters.length; k++) {
-    const [cx, cy, rx, ry] = clusters[k];
-    const sway = Math.sin(o.time * 1.2 + k * .5) * 1.3;
-    for (let y = Math.floor(cy - ry); y <= cy + ry; y++) for (let x = Math.floor(cx - rx); x <= cx + rx; x++) {
-      const n = noise(x, y, o.seed + k);
-      const nx = (x - cx) / rx; const ny = (y - cy) / ry;
-      if (nx * nx + ny * ny > .8 + n * .38 || n < .08) continue;
-      const light = .45 - ny * .28 - nx * .14 + n * .2;
-      const shade = Math.max(0, Math.min(3, Math.floor(light * 4)));
-      s.cell(x + sway, y, ["'", '/', '\\', ';', '*', '%'][Math.floor(n * 6)], palette[shade]);
-    }
-  }
-  return s.frame();
+  return s.frame(o.facing === 'left');
 }
 
-export const PINE: AsciiAsset = { id: 'pine', version: 2, name: 'Mountain pine', category: 'Vegetation', description: 'Bent trunk, branching canopy, clustered needles and wind.', width: 110, height: 110, anchor: { x: 54, y: 104 }, variants: ['Forest', 'Moonlit'], generate };
+export const PINE: AsciiAsset = {
+  id: 'pine', version: 3, name: 'Layered mountain pine', category: 'Vegetation',
+  description: 'Five ragged needle tiers, dark undersides, visible trunk and optional snowy tips.',
+  width: 110, height: 110, anchor: { x: 54, y: 104 },
+  variants: ['Forest', 'Moonlit', 'Snowy tips'],
+  footprint: [{ x: 0, y: -1, radius: 6 }],
+  generate,
+};

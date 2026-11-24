@@ -148,17 +148,25 @@ export function drawPerson(sp: BodySpec, o: AssetOptions): AsciiCell[] {
   const breath = walk ? .5 + .5 * Math.sin(ph * 2) : .5 + .5 * Math.sin(o.time * 2.9);
   const bob = walk ? -Math.abs(stepS) * 1.8 : 0;
   const sway = Math.sin(o.time * 1.9);
-  /** Periodic blink: a discrete idle cue that survives glyph rounding. */
-  const blinkPhase = o.time % 3.3;
-  const blink = blinkPhase >= .3 && blinkPhase < .55;
+
+  /* Race builds are derived from the authored spec so every existing id keeps
+   * its canvas, anchor and silhouette family while reading differently at 0.3x. */
+  const goblin = sp.ears === 'long' && sp.earSize >= 1.4;
+  const orc = sp.tusks >= 1.4 || sp.shoulder >= 24;
+  const elf = sp.ears === 'pointed' && sp.tusks === 0 && sp.height >= 118 && sp.shoulder <= 14;
+  const dwarf = sp.shoulder >= 20 && sp.height <= 96;
+  const bulk = orc ? 1.22 : dwarf ? 1.18 : goblin ? .9 : elf ? .86 : 1;
+  const legShare = dwarf ? sp.legs * .82 : goblin ? sp.legs * .84 : elf ? Math.min(.56, sp.legs + .05) : sp.legs;
+  const headScale = goblin ? 1.12 : orc ? 1.06 : dwarf ? 1.14 : elf ? .96 : 1;
+  const hunch = goblin ? Math.min(1, sp.hunch + .2) : sp.hunch;
 
   const skin = tones(sp.skin);
-  const legLen = sp.height * sp.legs;
+  const legLen = sp.height * legShare;
   const hipY = gy - legLen + bob;
-  const hr = sp.head; const rx = hr * .9;
-  const fwd = sp.hunch * sp.shoulder * .85;
-  const hcy = gy - sp.height + 1 + bob + hr + sp.hunch * hr * .55;
-  const hcx = cx + fwd + sp.hunch * 2;
+  const hr = sp.head * headScale; const rx = hr * .9;
+  const fwd = hunch * sp.shoulder * .85;
+  const hcy = gy - sp.height + 1 + bob + hr + hunch * hr * .55;
+  const hcx = cx + fwd + hunch * 2;
   const shY = hcy + hr * .8 - breath * 1.4;
   const torsoLen = hipY - shY;
   const tOf = (y: number) => clamp((y - shY) / torsoLen, 0, 1);
@@ -170,12 +178,12 @@ export function drawPerson(sp: BodySpec, o: AssetOptions): AsciiCell[] {
     const t = tOf(y);
     let w = sp.shoulder * (1 - .13 * t) + sp.belly * Math.sin(Math.PI * clamp((t - .08) / .92, 0, 1)) + (t < .7 ? breath * 1.2 : 0);
     if (y > hipY) w += (y - hipY) * (robe ? .26 : coat ? .17 : sp.torso === 'tunic' || sp.torso === 'vest' ? .1 : 0);
-    return w;
+    return w * bulk;
   };
   const hemY = robe ? gy - 3 : coat ? hipY + legLen * .62 : sp.torso === 'bare' ? hipY + 2 : hipY + legLen * sp.hem;
-  const armR = Math.max(3.2, sp.shoulder * .2);
-  const hipHalf = sp.shoulder * .4;
-  const armLen = sp.height * sp.arm;
+  const armR = Math.max(3.2, sp.shoulder * .2) * (orc ? 1.3 : dwarf ? 1.16 : goblin ? .9 : 1);
+  const hipHalf = sp.shoulder * .4 * bulk;
+  const armLen = sp.height * sp.arm * (goblin ? 1.12 : elf ? 1.06 : 1);
   const rag = (x: number, y: number, k = 1) => noise(x, y, o.seed + 7) < sp.ragged * .22 * k;
 
   /* hand positions are computed first: held items need them */
@@ -225,7 +233,7 @@ export function drawPerson(sp: BodySpec, o: AssetOptions): AsciiCell[] {
     const hx = cx + side * hipHalf + fwd * .15; const fx = hx + k * stepS * sp.shoulder * .22;
     const lift = Math.max(0, k * stepC) * 3.5;
     const fy = gy - 1.6 - lift;
-    const lr = Math.max(3.4, sp.shoulder * .26);
+    const lr = Math.max(3.4, sp.shoulder * .26) * (orc ? 1.28 : dwarf ? 1.12 : goblin ? .9 : elf ? .88 : 1);
     pen.capsule(hx, hipY, fx, fy - 2, lr, legPal, .95);
     if (sp.boots) pen.capsule(hx + (fx - hx) * .62, hipY + (fy - 2 - hipY) * .62, fx, fy - 1, lr * 1.04, tones(sp.boots), .95);
     else if (sp.wraps) pen.capsule(hx + (fx - hx) * .7, hipY + (fy - 2 - hipY) * .7, fx, fy - 1, lr * 1.02, tones(sp.wraps), .9);
@@ -302,6 +310,23 @@ export function drawPerson(sp: BodySpec, o: AssetOptions): AsciiCell[] {
   if (sp.gold && sp.torso !== 'bare') {
     for (let i = -3; i <= 3; i++) pen.put(xs(shY + 3) + i * 2.2, shY + 7 - Math.abs(i), 'o', GOLD);
     pen.ellipse(xs(shY + 11), shY + 11, 2.2, 2.4, tones('#e04050'), 1.2, METAL); pen.put(xs(shY + 11), shY + 11, '*', '#ffffff');
+  }
+
+  // Clothing reads as cloth, not a flat block: a few broad vertical folds that
+  // survive 0.25x, and asymmetric hanging threads on cheap, ragged garments.
+  if (robe || coat || sp.torso === 'tunic' || sp.torso === 'vest') {
+    const fold = garment[1];
+    for (const f of [-.66, -.24, .3, .7]) {
+      const fy0 = shY + 9; const fy1 = Math.min(hemY - 2, hipY + legLen * sp.hem);
+      if (fy1 <= fy0) continue;
+      pen.line(xs(fy0) + f * hw(fy0), fy0, xs(fy1) + f * hw(fy1), fy1, fold, ':', 1);
+    }
+  }
+  if (sp.ragged > .4 || sp.rope) {
+    for (let i = 0; i < 3; i++) {
+      const tx = xs(hemY) + (noise(i, 21, o.seed) - .5) * hw(hemY) * 1.7;
+      pen.line(tx, hemY - 3, tx + (noise(i, 22, o.seed) - .5) * 6, hemY + 2 + noise(i, 23, o.seed) * 4, garment[0], ':', 1);
+    }
   }
 
   /* 4. front arm and held item */
@@ -383,22 +408,20 @@ export function drawPerson(sp: BodySpec, o: AssetOptions): AsciiCell[] {
     if (sp.ears !== 'round') pen.line(ex + side * 3, earY + 1, ex + side * 7 * e, earY - 4 * e, mix(sp.skin, '#b04040', .4), side > 0 ? '/' : '\\', 1);
     if (sp.gold) pen.put(ex + side * 1.5, earY + 4, 'o', GOLD);
   }
-  if (sp.headwear === 'hood') pen.ellipse(hcx, hcy - 1, rx + 4, hr + 4, tones(sp.headColor), .8);
-  pen.ellipse(hcx, hcy, rx, hr, skin, 1.02);
+  if (sp.headwear === 'hood') pen.ellipse(hcx, hcy - 1, rx + 5, hr + 5, tones(sp.headColor), .92);
+  pen.ellipse(hcx, hcy, rx, hr, skin, 1.04);
+  // Broad form shading: a shaded jaw under a lit cheek, visible after downsampling.
+  pen.ellipse(face, hcy + hr * .42, rx * .78, hr * .44, skin.map(c => mix(c, '#000000', .14)), .9, RAMP, (_x, y) => y > hcy + hr * .12);
   if (sp.hair !== 'none' && sp.headwear !== 'hood' && sp.headwear !== 'scarf') {
-    const cut = sp.hair === 'short' ? .25 : .38;
-    pen.ellipse(hcx, hcy - hr * .15, rx + 1.4, hr * 1.12, hair, 1, RAMP, (x, y) => y < hcy - hr * cut + Math.abs(x - hcx) * .12);
+    const cut = sp.hair === 'short' ? .1 : .26;
+    pen.ellipse(hcx, hcy - hr * .16, rx + 2.2, hr * 1.18, hair, 1.06, ':;+=oxO#%@', (x, y) => y < hcy - hr * cut + Math.abs(x - hcx) * .14);
   }
-  const eyeY = hcy - hr * .02;
-  if (sp.brow) pen.rows(eyeY - 3 - sp.brow, eyeY - 1, () => [hcx - rx * .78 + 1, hcx + rx * .78 + 1], skin.map(c => mix(c, '#000000', .35)), .9);
-  const big = sp.eyes === '#f2d23a';
-  for (const side of [-1, 1]) {
-    const bx = face + side * rx * .42;
-    pen.put(bx, eyeY, blink ? '-' : big ? 'O' : 'o', blink ? skin[1] : sp.eyes); pen.put(bx + side * .8, eyeY - 1, '`', skin[0]);
-    if (big) pen.put(bx, eyeY + 1, ',', skin[0]);
-  }
-  if (sp.nose > 0) pen.ellipse(face + 1, hcy + hr * .32, 1.4 + sp.nose * .8, 1.2 + sp.nose * 1.4, skin.map(c => mix(c, '#7a3a2a', .15)), 1.05);
-  if (sp.beard === 'none' || sp.beard === 'short') pen.line(face - 3, hcy + hr * .62, face + 3, hcy + hr * .62, mix(sp.skin, '#3a1a14', .6), '-', 1);
+  // ONE highlight. A pair of 1-cell eyes averages into noise at 0.25-0.36x;
+  // a single broad cheek/nose glint (or the goblin's lone eye) remains readable.
+  const glowing = sp.eyes === '#f2d23a';
+  const hlColor = glowing ? sp.eyes : mix(sp.skin, '#ffffff', .58);
+  const hlPal = [hlColor, hlColor, hlColor, hlColor, hlColor];
+  pen.ellipse(face + rx * .12, hcy - hr * .06, rx * .24, hr * .18, hlPal, 1.18, 'oO#%@');
   if (sp.tusks) for (const side of [-1, 1]) pen.poly([[face + side * rx * .5 - 1.4, hcy + hr * .7], [face + side * rx * .5 + 1.4, hcy + hr * .7], [face + side * rx * .5 + side * .5, hcy + hr * .7 - 3 - sp.tusks * 3]], tones('#e8e0c8'), 1.1, METAL);
   if (sp.beard !== 'none') {
     const bd = tones(sp.beardColor);
@@ -466,7 +489,9 @@ export function drawPerson(sp: BodySpec, o: AssetOptions): AsciiCell[] {
       const bw = tones('#e6dcc4'); const ink = tones('#b0a384');
       pen.ellipse(hcx, hcy - hr * .5, rx + 1.4, hr * .62, bw, 1, RAMP, (_x, y) => y < hcy - hr * .1);
       for (let y = Math.round(hcy - hr * 1.1); y < hcy; y += 3) pen.line(hcx - rx - 1, y, hcx + rx + 1, y + 1, ink[1], '-', 1);
-      pen.ellipse(face + rx * .42, eyeY, 3.6, 3.2, bw, 1.05); pen.line(face + rx * .42 - 3, eyeY - 2, face + rx * .42 + 3, eyeY + 2, ink[1], '/', 1);
+      // A single broad wrap across the face: no tiny eye detail at game scale.
+      pen.rows(hcy - hr * .12, hcy + hr * .14, () => [hcx - rx * .9, hcx + rx * .9], bw, 1.02);
+      pen.line(hcx - rx, hcy - hr * .18, hcx + rx, hcy - hr * .18, ink[1], '=', 1);
       pen.capsule(hcx - rx - 1, hcy + hr * .2, hcx - rx - 4, hcy + hr * .9 + sway, 1.8, bw, .95); break; }
     default: break;
   }

@@ -8,7 +8,7 @@ import { authoredFrame, type GlyphArt } from './authored.ts';
 import type { AsciiAsset } from './types.ts';
 
 function character(id: string, name: string, art: GlyphArt, description: string): AsciiAsset {
-  return { id, name, version: 1, category: 'Character', width: art.width, height: art.height, anchor: art.anchor, description, variants: ['Original', 'Moonlit', 'Bronze'], generate: options => authoredFrame(art, options, 'knight') };
+  return { id, name, version: 1, category: 'Character', width: art.width, height: art.height, anchor: art.anchor, description, variants: ['Original', 'Moonlit', 'Bronze'], generate: options => authoredFrame(art, options, 'character') };
 }
 
 export const CHARACTERS: readonly AsciiAsset[] = [

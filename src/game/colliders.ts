@@ -17,7 +17,18 @@ export function collidersFor(item: ColliderSource): Collider[] {
   // Assets that declare their own footprint (buildings, fences, carts) use it directly.
   if (asset.footprint) return asset.footprint.map(c => ({ x: x + c.x * scale, y: y + c.y * scale, radius: Math.max(1.5, c.radius * scale) }));
   switch (asset.id) {
-    case 'pine': return [{ x, y, radius: 3 }];
+    // Trees block only their trunk. Agent E's assets declare their own
+    // footprints (handled above); these are fallbacks and cover the old pine.
+    case 'pine': return [{ x, y, radius: Math.max(2, 3 * scale) }];
+    case 'oak': return [{ x, y, radius: Math.max(3, 12 * scale) }];
+    case 'willow': return [{ x, y, radius: Math.max(3, 10 * scale) }];
+    case 'birch': return [{ x, y, radius: Math.max(2, 6 * scale) }];
+    case 'cypress': return [{ x, y, radius: Math.max(3, 7 * scale) }];
+    case 'cherry': return [{ x, y, radius: Math.max(3, 9 * scale) }];
+    case 'dead-tree': return [{ x, y, radius: Math.max(3, 8 * scale) }];
+    case 'bush': return [{ x, y, radius: Math.max(2, 5 * scale) }];
+    case 'fern': return [{ x, y, radius: Math.max(1.5, 2 * scale) }];
+    case 'reeds': return [{ x, y, radius: Math.max(1.5, 3 * scale) }];
     case 'rock': return [{ x, y, radius: 6 }];
     case 'crypt-arch': {
       // Two pillars (sprite x 10-20 and 76-86); the 56-unit doorway between stays open.

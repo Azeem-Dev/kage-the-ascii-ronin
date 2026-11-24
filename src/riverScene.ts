@@ -366,7 +366,7 @@ export function startRiverScene(): void {
     draws.push({ y: horse.y, draw: () => {
       shadow(ids, horse.x, horse.y, 24, 3);
       place(ids, assetCache.get(HORSE, { ...actorOptions, seed: 31, variant: 0, action: mounted && hero.moving ? 'walk' : 'idle', facing: horse.facing }, .48 / detailStep, true), horse.x, horse.y, LAYER.actor); // always an actor: prop base-darkening made its legs vanish (looked like floating)
-      if (mounted) place(ids, assetCache.get(playable[playerIndex], { ...actorOptions, action: 'idle' }, 29 / playable[playerIndex].height / detailStep, true), hero.x - (hero.facing === 'right' ? 2 : -2), hero.y - 14 + (hero.moving ? Math.abs(Math.sin(time * 6)) : 0), LAYER.actor, false);
+      if (mounted) place(ids, assetCache.get(playable[playerIndex], { ...actorOptions, action: 'sit' as const }, 34 / playable[playerIndex].height / detailStep, true), hero.x - (hero.facing === 'right' ? 2 : -2), hero.y - 22 + (hero.moving ? Math.abs(Math.sin(time * 6)) * .6 : 0), LAYER.actor, false);
     } });
     if (!mounted) draws.push({ y: hero.y, draw: () => {
       shadow(ids, hero.x, hero.y, 11, 2.5);

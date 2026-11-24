@@ -1,0 +1,263 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Agent F — Wildlife motion bench</title>
+  <style>
+    :root { color-scheme: dark; font-family: Inter, ui-sans-serif, system-ui, sans-serif; background: #080d12; color: #dce7df; }
+    * { box-sizing: border-box; }
+    body { margin: 0; padding: 24px; max-width: 1500px; margin-inline: auto; }
+    h1 { margin: 0 0 6px; font-size: 24px; letter-spacing: -.02em; }
+    h2 { margin: 30px 0 8px; font-size: 18px; }
+    p, small { color: #93a79d; line-height: 1.5; }
+    .toolbar { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: end; padding: 16px; margin: 18px 0; background: #101a20; border: 1px solid #26383c; border-radius: 10px; }
+    label { display: grid; gap: 5px; font-size: 11px; color: #9db1a7; text-transform: uppercase; letter-spacing: .08em; }
+    select, button { font: inherit; color: #dce7df; background: #17262b; border: 1px solid #365057; border-radius: 6px; padding: 8px 10px; }
+    button { cursor: pointer; }
+    button:hover, button.active { background: #2b514b; border-color: #69a28b; }
+    button:disabled { opacity: .35; cursor: default; }
+    .checks { display: flex; gap: 14px; padding-bottom: 8px; }
+    .checks label { display: flex; align-items: center; gap: 6px; text-transform: none; letter-spacing: 0; font-size: 13px; }
+    .stage-wrap, .sheet-wrap, .habitat-wrap { overflow: hidden; border: 1px solid #26383c; border-radius: 10px; background: #070b10; }
+    canvas { display: block; width: 100%; height: auto; image-rendering: pixelated; }
+    #stage { max-height: 620px; object-fit: contain; }
+    #habitat { cursor: crosshair; }
+    .meta { display: flex; flex-wrap: wrap; gap: 8px 22px; margin: 10px 2px 0; font-family: ui-monospace, Consolas, monospace; font-size: 12px; color: #a8bdb2; }
+    .note { margin-top: 8px; }
+    code { color: #bfe3c9; }
+    @media (max-width: 700px) { body { padding: 12px; } .toolbar { padding: 12px; } }
+  </style>
+</head>
+<body>
+  <h1>Agent F · Wildlife motion bench</h1>
+  <p>Every pose below is generated from glyph geometry and drawn through the game’s <code>AssetRenderer</code>. One grid cell is one world unit; the hero is about 41 units tall.</p>
+
+  <div class="toolbar" aria-label="Wildlife preview controls">
+    <label>Animal<select id="asset"></select></label>
+    <label>Scale<select id="scale"><option value="0.25">0.25×</option><option value="0.36" selected>0.36×</option><option value="0.6">0.60×</option></select></label>
+    <label>Pose<select id="action"><option value="auto">Auto cycle</option><option value="idle">Idle</option><option value="walk">Walk / hop</option><option value="fly">Fly</option><option value="run">Gallop</option></select></label>
+    <label>Breed<select id="variant"></select></label>
+    <div class="checks"><label><input id="night" type="checkbox"> Night lighting</label><label><input id="playing" type="checkbox" checked> Play</label></div>
+    <button id="facing" type="button">Face left</button>
+  </div>
+
+  <div class="stage-wrap"><canvas id="stage" width="1040" height="576" aria-label="Selected wildlife animation"></canvas></div>
+  <div class="meta"><span id="poseLabel"></span><span id="sizeLabel"></span><span id="renderLabel"></span></div>
+  <p class="note">Auto cycles idle → walk → flight (horses use a separate gallop pose). The quiet reference column is 41 world units tall.</p>
+
+  <h2>All assets · current scale and pose</h2>
+  <p>Use the scale and pose controls above to inspect the entire registry at 0.25×, 0.36× and 0.60×. The selected animal above remains the close-up reference.</p>
+  <div class="sheet-wrap"><canvas id="sheet" width="1280" height="3456" aria-label="All wildlife contact sheet"></canvas></div>
+
+  <h2>Live deterministic habitat simulation</h2>
+  <div class="toolbar">
+    <label>Region<select id="region">
+      <option value="meadow">Prism Meadow</option><option value="farm">Oakhollow fields</option><option value="mudgate">Mudgate</option><option value="orcs">Orc Warband</option><option value="elves">Silverleaf Grove</option>
+    </select></label>
+    <button id="resetWildlife" type="button">Respawn</button>
+    <span id="wildlifeCount" class="meta"></span>
+  </div>
+  <div class="habitat-wrap"><canvas id="habitat" width="720" height="600" aria-label="Live wildlife simulation; click to move the player"></canvas></div>
+  <p class="note">Click the habitat to move the player: deer and ground birds flee. Night lighting switches butterflies to fireflies. This is a preview only; nothing under <code>src/</code> imports this page.</p>
+
+  <script type="module">
+    import { ANIMALS } from '/src/assets/animals/index.ts';
+    import { CREATURES } from '/src/assets/creatures.ts';
+    import { AssetRenderer, LAYER } from '/src/render/assetRenderer.ts';
+    import { AssetCache } from '/src/render/assetCache.ts';
+    import { Wildlife } from '/src/game/wildlife.ts';
+    import { landscapeCell } from '/src/assets/landscape.ts';
+
+    const $ = id => document.getElementById(id);
+    const assets = [...ANIMALS, ...CREATURES];
+    const flyingIds = new Set(['sparrow', 'crow', 'parrot', 'vulture', 'firefly', 'butterfly-blue', 'butterfly-pink', 'butterfly-purple', 'bat', 'bird', 'moth']);
+    const params = new URLSearchParams(location.search);
+    const state = {
+      assetId: params.get('asset') && assets.some(a => a.id === params.get('asset')) ? params.get('asset') : 'cow',
+      scale: [.25, .36, .6].includes(Number(params.get('scale'))) ? Number(params.get('scale')) : .36,
+      mode: params.get('action') || 'auto', variant: Number(params.get('variant')) || 0,
+      facing: params.get('facing') === 'left' ? 'left' : 'right', night: params.get('night') === '1',
+      playing: true, time: 0, region: params.get('region') || 'meadow',
+    };
+
+    for (const asset of assets) {
+      const option = document.createElement('option'); option.value = asset.id; option.textContent = `${asset.id} · ${asset.name}`;
+      $('asset').append(option);
+    }
+    $('asset').value = state.assetId; $('scale').value = String(state.scale); $('action').value = state.mode; $('night').checked = state.night;
+
+    function currentAsset() { return assets.find(asset => asset.id === state.assetId); }
+    function refreshVariants() {
+      const asset = currentAsset(); $('variant').replaceChildren();
+      asset.variants.forEach((name, index) => { const option = document.createElement('option'); option.value = index; option.textContent = name; $('variant').append(option); });
+      state.variant = ((state.variant % asset.variants.length) + asset.variants.length) % asset.variants.length;
+      $('variant').value = String(state.variant);
+      $('action').querySelector('[value="fly"]').disabled = !flyingIds.has(asset.id);
+      $('action').querySelector('[value="run"]').disabled = asset.id !== 'wild-horse';
+      $('action').querySelector('[value="fly"]').textContent = asset.id === 'wild-horse' ? 'Fly (n/a)' : 'Fly / flutter';
+      $('action').querySelector('[value="run"]').textContent = asset.id === 'wild-horse' ? 'Gallop' : 'Gallop (n/a)';
+    }
+    refreshVariants();
+
+    function poseFor(asset, mode = state.mode) {
+      if (mode !== 'auto') return mode;
+      const cycle = asset.id === 'wild-horse' ? ['idle', 'walk', 'run']
+        : asset.id === 'vulture' ? ['idle', 'fly']
+          : flyingIds.has(asset.id) ? ['idle', 'walk', 'fly'] : ['idle', 'walk'];
+      return cycle[Math.floor(state.time / 1.8) % cycle.length];
+    }
+    function optionsFor(asset, action, variant = state.variant, facing = state.facing) {
+      return { time: state.time, seed: 1701 + variant * 31, variant, facing, action };
+    }
+    function setLighting(renderer) {
+      renderer.lighting = state.night
+        ? { ambient: [.22, .27, .34], sun: .08, sunColor: [.38, .52, .78], shadowX: -.45, shadowY: .2, saturation: 1.22 }
+        : { ambient: [.72, .78, .74], sun: .5, sunColor: [1, .94, .78], shadowX: .55, shadowY: .18, saturation: 1.28 };
+    }
+    function textCells(renderer, ids, cols, rows, text, x, y, color) {
+      for (let i = 0; i < text.length; i++) {
+        const px = x + i, py = y;
+        if (px >= 0 && px < cols && py >= 0 && py < rows) ids[py * cols + px] = renderer.glyph(text[i], color);
+      }
+    }
+    function stampAnimal(renderer, cache, ids, cols, rows, asset, x, groundY, z, scale, action, variant = state.variant, facing = state.facing) {
+      const placed = cache.get(asset, optionsFor(asset, action, variant, facing), scale, true);
+      const flying = z > 0 || flyingIds.has(asset.id) && action === 'fly';
+      if (flying) renderer.stamp(ids, cols, rows, placed.sprite, x - placed.anchorX, groundY - z - placed.anchorY, LAYER.effect);
+      else {
+        renderer.stamp(ids, cols, rows, placed.sprite, x - placed.anchorX, groundY - placed.anchorY, LAYER.actor, groundY);
+        if (asset.light && state.night) renderer.addLight(cols, rows, x, groundY - z - 5, asset.light.radius * scale, ...asset.light.color);
+      }
+    }
+
+    const stage = $('stage'), stageCtx = stage.getContext('2d'), stageRenderer = new AssetRenderer(4, 6), stageCache = new AssetCache(stageRenderer);
+    const stageCols = 260, stageRows = 96;
+    let stageBaseNight;
+    function makeStageBase(night) {
+      const ids = new Uint32Array(stageCols * stageRows);
+      for (let y = 0; y < stageRows; y++) for (let x = 0; x < stageCols; x++) {
+        let color = y < 58 ? (night ? '#080e1b' : '#142332') : y < 70 ? (night ? '#101d20' : '#263e34') : (night ? '#152522' : '#314c35');
+        let glyph = ' ';
+        if (y === 69) { glyph = '-'; color = night ? '#365047' : '#688064'; }
+        if (!night && y < 45 && (x * 17 + y * 31) % 211 < 2) { glyph = '.'; color = '#6c7e82'; }
+        if (y > 76 && (x * 13 + y * 7) % 29 < 3) { glyph = "'"; color = night ? '#294235' : '#527148'; }
+        ids[y * stageCols + x] = stageRenderer.glyph(glyph, color);
+      }
+      return ids;
+    }
+    // The preview follows the renderer's begin -> stamp -> present contract.
+    function renderStage() {
+      setLighting(stageRenderer);
+      if (stageBaseNight === undefined) stageBaseNight = makeStageBase(state.night);
+      const ids = stageRenderer.begin(stageBaseNight);
+      const asset = currentAsset(), action = poseFor(asset);
+      const z = flyingIds.has(asset.id) && (action === 'fly' || asset.id === 'vulture' || asset.id.startsWith('butterfly') || asset.id === 'moth' || asset.id === 'firefly') ? (asset.id === 'vulture' ? 8 : 5) : 0;
+      stampAnimal(stageRenderer, stageCache, ids, stageCols, stageRows, asset, 145, 70, z, state.scale, action);
+      for (let y = 29; y <= 70; y++) ids[y * stageCols + 226] = stageRenderer.glyph(y === 29 || y === 70 ? '+' : '|', '#536b61');
+      for (let y = 39; y <= 60; y += 7) ids[y * stageCols + 226] = stageRenderer.glyph('-', '#536b61');
+      textCells(stageRenderer, ids, stageCols, stageRows, '41 world units', 4, 3, '#9eb8a9');
+      textCells(stageRenderer, ids, stageCols, stageRows, `${asset.name} / ${asset.variants[state.variant]}`, 4, 5, '#9eb8a9');
+      textCells(stageRenderer, ids, stageCols, stageRows, `${action} / ${state.scale.toFixed(2)}x / ${state.facing}`, 4, 92, '#9eb8a9');
+      stageRenderer.present(stageCtx, ids, stageCols, stageRows);
+      $('poseLabel').textContent = `Pose: ${action}`;
+      $('sizeLabel').textContent = `Authored ${asset.width}×${asset.height} → world ${(asset.width * state.scale).toFixed(1)}×${(asset.height * state.scale).toFixed(1)}`;
+      $('renderLabel').textContent = `Renderer shade ${stageRenderer.shadeMs.toFixed(1)} ms`;
+    }
+
+    const sheet = $('sheet'), sheetCtx = sheet.getContext('2d'), sheetRenderer = new AssetRenderer(4, 6), sheetCache = new AssetCache(sheetRenderer);
+    const sheetCols = 320, cardRows = 9, rowHeight = 64, sheetRows = cardRows * rowHeight;
+    if (sheet.height !== sheetRows * 6) sheet.height = sheetRows * 6;
+    function renderSheet() {
+      setLighting(sheetRenderer);
+      const base = new Uint32Array(sheetCols * sheetRows);
+      for (let i = 0; i < base.length; i++) base[i] = sheetRenderer.glyph(' ', '#0c151a');
+      const ids = sheetRenderer.begin(base);
+      assets.forEach((asset, index) => {
+        const col = index % 2, row = Math.floor(index / 2);
+        const x = 80 + col * 160, ground = row * rowHeight + 57;
+        const action = poseFor(asset);
+        const z = flyingIds.has(asset.id) && (action === 'fly' || asset.id === 'vulture' || asset.id.startsWith('butterfly') || asset.id === 'moth' || asset.id === 'firefly') ? 7 : 0;
+        for (let px = 8 + col * 160; px < 152 + col * 160; px++) ids[ground * sheetCols + px] = sheetRenderer.glyph('-', '#263c34');
+        stampAnimal(sheetRenderer, sheetCache, ids, sheetCols, sheetRows, asset, x, ground, z, state.scale, action, index % asset.variants.length, index % 2 ? 'left' : 'right');
+      });
+      assets.forEach((asset, index) => {
+        const col = index % 2, row = Math.floor(index / 2);
+        textCells(sheetRenderer, ids, sheetCols, sheetRows, `${asset.id} / ${poseFor(asset)}`, 4 + col * 160, row * rowHeight + 1, '#a9c0b3');
+      });
+      sheetRenderer.present(sheetCtx, ids, sheetCols, sheetRows);
+    }
+
+    const regions = {
+      meadow: { x: 430, y: 20 }, farm: { x: 770, y: -60 }, mudgate: { x: 700, y: 330 }, orcs: { x: 150, y: 640 }, elves: { x: 520, y: 620 },
+    };
+    const habitat = $('habitat'), habitatCtx = habitat.getContext('2d'), habitatRenderer = new AssetRenderer(4, 6), habitatCache = new AssetCache(habitatRenderer);
+    const habitatCols = 180, habitatRows = 100, detail = 2;
+    let wildlife = new Wildlife(1701), habitatBase = new Uint32Array(0), habitatRegion = '';
+    let player = { x: regions.meadow.x + 80, y: regions.meadow.y + 55 };
+    function rebuildHabitat() {
+      habitatRegion = state.region;
+      const center = regions[state.region];
+      habitatBase = new Uint32Array(habitatCols * habitatRows);
+      for (let row = 0; row < habitatRows; row++) for (let col = 0; col < habitatCols; col++) {
+        const x = center.x - habitatCols * detail / 2 + col * detail;
+        const y = center.y - habitatRows * detail / 2 + row * detail;
+        const cell = landscapeCell(x, y, 0, 17) || { glyph: ' ', color: '#102432' };
+        habitatBase[row * habitatCols + col] = habitatRenderer.glyph(cell.glyph, cell.color);
+      }
+      player = { x: center.x + 75, y: center.y + 50 };
+    }
+    function renderHabitat(dt) {
+      if (habitatRegion !== state.region) { wildlife = new Wildlife(1701); rebuildHabitat(); }
+      const center = regions[state.region];
+      const cameraX = center.x - habitatCols * detail / 2, cameraY = center.y - habitatRows * detail / 2;
+      wildlife.update(state.playing ? dt : 0, cameraX, cameraY, habitatCols * detail, habitatRows * detail, player, state.night);
+      setLighting(habitatRenderer);
+      const ids = habitatRenderer.begin(habitatBase);
+      const draws = wildlife.animals.map(animal => {
+        const asset = assets.find(a => a.id === animal.assetId);
+        return { animal, asset, y: animal.y - animal.z };
+      }).filter(item => item.asset).sort((a, b) => a.y - b.y);
+      for (const { animal, asset, y } of draws) {
+        const placed = habitatCache.get(asset, { time: state.time + animal.seed % 5, seed: animal.seed, variant: animal.variant, facing: animal.facing, action: animal.action }, animal.scale / detail, true);
+        const x = (animal.x - cameraX) / detail, ground = (animal.y - cameraY) / detail, screenY = (y - cameraY) / detail;
+        if (animal.z > 0) habitatRenderer.stamp(ids, habitatCols, habitatRows, placed.sprite, x - placed.anchorX, screenY - placed.anchorY, LAYER.effect);
+        else habitatRenderer.stamp(ids, habitatCols, habitatRows, placed.sprite, x - placed.anchorX, ground - placed.anchorY, LAYER.actor, ground);
+        if (asset.id === 'firefly' && state.night) habitatRenderer.addLight(habitatCols, habitatRows, x, screenY, 5, .6, 1, .2);
+      }
+      const px = Math.round((player.x - cameraX) / detail), py = Math.round((player.y - cameraY) / detail);
+      for (let dx = -2; dx <= 2; dx++) ids[py * habitatCols + px + dx] = habitatRenderer.glyph(dx === 0 ? '+' : '-', '#f1d99a');
+      for (let dy = -2; dy <= 2; dy++) ids[(py + dy) * habitatCols + px] = habitatRenderer.glyph(dy === 0 ? '+' : '|', '#f1d99a');
+      textCells(habitatRenderer, ids, habitatCols, habitatRows, $('region').selectedOptions[0].textContent, 3, 2, '#d5e5d8');
+      habitatRenderer.present(habitatCtx, ids, habitatCols, habitatRows);
+      $('wildlifeCount').textContent = `${wildlife.animals.length} live · ${state.night ? 'night' : 'day'} · click to move player`;
+    }
+
+    $('asset').addEventListener('change', event => { state.assetId = event.target.value; state.variant = 0; refreshVariants(); });
+    $('scale').addEventListener('change', event => { state.scale = Number(event.target.value); });
+    $('action').addEventListener('change', event => { state.mode = event.target.value; });
+    $('variant').addEventListener('change', event => { state.variant = Number(event.target.value); });
+    $('night').addEventListener('change', event => { state.night = event.target.checked; stageBaseNight = undefined; });
+    $('playing').addEventListener('change', event => { state.playing = event.target.checked; });
+    $('facing').addEventListener('click', () => { state.facing = state.facing === 'left' ? 'right' : 'left'; $('facing').textContent = state.facing === 'left' ? 'Face right' : 'Face left'; });
+    $('region').addEventListener('change', event => { state.region = event.target.value; });
+    $('resetWildlife').addEventListener('click', () => { wildlife = new Wildlife(1701); });
+    habitat.addEventListener('pointerdown', event => {
+      const rect = habitat.getBoundingClientRect(), center = regions[state.region];
+      player = { x: center.x - habitatCols * detail / 2 + (event.clientX - rect.left) / rect.width * habitatCols * detail, y: center.y - habitatRows * detail / 2 + (event.clientY - rect.top) / rect.height * habitatRows * detail };
+    });
+
+    let previous = performance.now(), lastSheet = 0;
+    function frame(now) {
+      const dt = Math.min(.05, (now - previous) / 1000); previous = now;
+      if (state.playing) state.time += dt;
+      renderStage();
+      if (now - lastSheet > 80) { renderSheet(); lastSheet = now; }
+      renderHabitat(dt);
+      requestAnimationFrame(frame);
+    }
+    rebuildHabitat();
+    requestAnimationFrame(frame);
+  </script>
+</body>
+</html>

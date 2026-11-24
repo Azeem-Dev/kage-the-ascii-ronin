@@ -280,7 +280,9 @@ export class AssetRenderer {
     for (let y = 0; y < rows; y++) for (let x = 0; x < cols; x++) {
       const i = y * cols + x;
       if (layers[i] !== LAYER.actor) continue;
-      for (let dy = -1; dy <= 1; dy++) {
+      // Halo on the sides and above only: a dark band under the feet would cut actors
+      // off from the ground and make them look like they float.
+      for (let dy = -1; dy <= 0; dy++) {
         const yy = y + dy; if (yy < 0 || yy >= rows) continue;
         for (let dx = -2; dx <= 2; dx++) {
           const xx = x + dx; if (xx < 0 || xx >= cols) continue;

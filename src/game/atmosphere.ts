@@ -37,12 +37,16 @@ export class Atmosphere {
     const first = Math.floor(cameraY / 512) - 1;
     const last = Math.floor((cameraY + rows * step) / 512) + 1;
     for (let block = first; block <= last; block++) for (let i = 0; i < 96; i++) {
-      const y = block * 512 + ((i * 71.37 + time * 18) % 512);
+      // Each foam streak has its own speed, start and length, and wanders across the current,
+      // so streaks never move as one evenly spaced grid.
+      const speed = 12 + noise(i, block, 118) * 16;
+      const y = block * 512 + ((noise(i, block, 119) * 512 + time * speed) % 512);
       if (y < cameraY - 10 || y > cameraY + rows * step + 10) continue;
-      const lane = (noise(i, block, 117) - .5) * 1.65;
-      for (let tail = 0; tail < 5; tail++) {
+      const lane = (noise(i, block, 117) - .5) * 1.65 + Math.sin(time * .3 + i * 1.3) * .08;
+      const tails = 2 + Math.floor(noise(i, block, 120) * 4);
+      for (let tail = 0; tail < tails; tail++) {
         const py = y - tail * 1.4;
-        const px = riverCenter(py) + lane * riverWidth(py) + Math.sin(py * .11 + i) * 1.2;
+        const px = riverCenter(py) + lane * riverWidth(py) + Math.sin(py * .11 + i * 2.3) * (.8 + noise(i, block, 121) * 1.6);
         put((px - cameraX) / step, (py - cameraY) / step, tail === 0 ? (i % 3 ? g.crest : g.crestAlt) : tail < 3 ? g.mid : g.tail);
       }
     }

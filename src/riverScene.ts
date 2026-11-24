@@ -5,7 +5,7 @@ import { HORSE } from './assets/horse.ts';
 import { ASSET_BY_ID } from './assets/catalog.ts';
 import { CHARACTERS } from './assets/characters.ts';
 import { riverCenter, waterDepth } from './assets/landscape.ts';
-import type { AsciiAsset } from './assets/types.ts';
+import { noise, type AsciiAsset } from './assets/types.ts';
 import { WorldChunks } from './game/worldChunks.ts';
 import { LANDMARKS, regionAt } from './game/landmarks.ts';
 import { AssetRenderer, LAYER } from './render/assetRenderer.ts';
@@ -27,7 +27,7 @@ interface Ripple { x: number; y: number; born: number }
 export function startRiverScene(): void {
   document.title = 'KAGE / The whispering river';
   document.documentElement.className = 'river-view';
-  document.body.innerHTML = `<main class="river-game"><canvas id="world-canvas" aria-label="Playable ASCII river scene. Move with WASD or tap the ground."></canvas><div class="world-vignette"></div><header class="world-hud"><div><span class="world-kicker">KAGE / VISUAL FOUNDATION</span><h1>The whispering river</h1><p>Wind through the reeds. Moonlight on the current.</p></div><div class="world-region">ASHEN VALLEY<br><span id="world-state">KNIGHT · WEATHERED STEEL</span></div></header><div class="world-bottom"><div class="world-health">KAGE <span>[━━━━━━━━━━━━]</span><small id="world-location">RIVERBANK</small></div><div class="world-controls"><span>WASD</span> move <span>SHIFT</span> run <span>WHEEL</span> zoom <span>H</span> character <span>V</span> armor <span>E</span> ride <span>P</span> pause <span>R</span> reset<br><small>1 Meadow / 2 Camp / 3 Crypt / 4 Forge · Click ground to walk</small></div><span class="world-telemetry" id="world-stats"></span></div></main>`;
+  document.body.innerHTML = `<main class="river-game"><canvas id="world-canvas" aria-label="Playable ASCII river scene. Move with WASD or tap the ground."></canvas><div class="world-vignette"></div><header class="world-hud"><div><span class="world-kicker">KAGE / VISUAL FOUNDATION</span><h1>The whispering river</h1><p>Wind through the reeds. Moonlight on the current.</p></div><div class="world-region">ASHEN VALLEY<br><span id="world-state">KNIGHT · WEATHERED STEEL</span></div></header><div class="world-bottom"><div class="world-health">KAGE <span>[━━━━━━━━━━━━]</span><small id="world-location">RIVERBANK</small></div><div class="world-controls"><span>WASD</span> move <span>SHIFT</span> run <span>WHEEL</span> zoom <span>H</span> character <span>V</span> armor <span>E</span> ride <span>P</span> pause <span>R</span> reset<br><small>1 Meadow 2 Camp 3 Crypt 4 Forge 5 Town 6 Mudgate 7 Village 8 Goblins 9 Orcs 0 Elves · T weather · B fire · Click to walk</small></div><span class="world-telemetry" id="world-stats"></span></div></main>`;
   const canvas = document.getElementById('world-canvas') as HTMLCanvasElement;
   const ctx = canvas.getContext('2d', { alpha: false });
   if (!ctx) throw new Error('Canvas 2D is required');
@@ -319,10 +319,24 @@ export function startRiverScene(): void {
       for (let i = -4; i <= 4; i++) plot(ids, step.x + i, step.y + Math.abs(i) * .3, stepId);
       if (age < .4) plot(ids, step.x - step.direction * age * 4, step.y - age * 4, footstepIds.dust);
     }
+    // Stone wakes: the current parts around the stone; foam forms at its flanks and drifts
+    // downstream at its own speed and wander, breaking up at random. No shared timer, so no marching lines.
     for (const instance of riverRocks) {
-      for (let i = 0; i < 18; i++) {
-        const age = (time * 5 + i * 1.7) % 30;
-        plot(ids, instance.x + Math.sin(i * 2.8 + age * .07) * (4 + age * .2), instance.y + age * .8, wakeIds[age > 20 ? 1 : 0][i % 3 ? 0 : 1]);
+      const radius = 7 * instance.scale + 3;
+      for (let i = 0; i < 14; i++) {
+        const seed = instance.seed * 31 + i * 7;
+        const speed = 6 + noise(seed, 1, 211) * 9;           // units per second, per fleck
+        const length = 26 + noise(seed, 2, 211) * 30;        // how far it drifts before re-forming
+        const travel = (time * speed + noise(seed, 3, 211) * length) % length;
+        const cycle = Math.floor((time * speed + noise(seed, 3, 211) * length) / length);
+        if (noise(seed, cycle, 212) < .3) continue;           // some cycles leave no foam: broken, natural
+        const side = i % 2 ? 1 : -1;
+        const spread = .12 + noise(seed, cycle, 213) * .25;
+        const drift = Math.sin(time * (.8 + noise(seed, 4, 211)) + seed) * 1.6;
+        const x = instance.x + side * (radius * .8 + travel * spread) + drift;
+        const y = instance.y + radius * .3 + travel;
+        const fresh = travel < length * .35;
+        plot(ids, x, y, wakeIds[fresh ? 0 : 1][noise(seed, cycle, 214) > .6 ? 1 : 0]);
       }
     }
     for (const ripple of ripples) {
@@ -351,11 +365,11 @@ export function startRiverScene(): void {
     const actorOptions = { time, seed: 17, variant: hero.variant, action: hero.moving ? 'walk' as const : 'idle' as const, facing: hero.facing };
     draws.push({ y: horse.y, draw: () => {
       shadow(ids, horse.x, horse.y, 24, 3);
-      place(ids, assetCache.get(HORSE, { ...actorOptions, seed: 31, variant: 0, action: mounted && hero.moving ? 'walk' : 'idle', facing: horse.facing }, .48 / detailStep, true), horse.x, horse.y, mounted ? LAYER.actor : LAYER.prop);
+      place(ids, assetCache.get(HORSE, { ...actorOptions, seed: 31, variant: 0, action: mounted && hero.moving ? 'walk' : 'idle', facing: horse.facing }, .48 / detailStep, true), horse.x, horse.y, LAYER.actor); // always an actor: prop base-darkening made its legs vanish (looked like floating)
       if (mounted) place(ids, assetCache.get(playable[playerIndex], { ...actorOptions, action: 'idle' }, 29 / playable[playerIndex].height / detailStep, true), hero.x - (hero.facing === 'right' ? 2 : -2), hero.y - 14 + (hero.moving ? Math.abs(Math.sin(time * 6)) : 0), LAYER.actor, false);
     } });
     if (!mounted) draws.push({ y: hero.y, draw: () => {
-      shadow(ids, hero.x, hero.y + 1, 10, 2);
+      shadow(ids, hero.x, hero.y, 11, 2.5);
       const asset = playable[playerIndex];
       place(ids, assetCache.get(asset, actorOptions, (asset.id.startsWith('dwarf') ? 30 : 41) / asset.height / detailStep, true), hero.x, hero.y, LAYER.actor);
     } });

@@ -1,14 +1,16 @@
 import { noise } from '../assets/types.ts';
 import { riverCenter, waterDepth } from '../assets/landscape.ts';
+import { LANDMARK_PROPS } from './landmarks.ts';
 
 export interface WorldProp {
   id: string;
-  assetId: 'pine' | 'rock';
+  assetId: string;
   x: number;
   y: number;
   seed: number;
   scale: number;
   variant: number;
+  faction?: 'friendly' | 'hostile' | 'ambient';
 }
 export interface WorldChunk { x: number; y: number; props: readonly WorldProp[] }
 export const CHUNK_SIZE = 96;
@@ -23,7 +25,7 @@ const STARTER_PROPS: readonly WorldProp[] = [
 /** Chunk content is data, not draw calls. Regenerating an evicted chunk must
  * produce identical IDs, placement, variants and seeds, including at negatives. */
 export function generateChunk(cx: number, cy: number): WorldChunk {
-  const props: WorldProp[] = STARTER_PROPS.filter(p => Math.floor(p.x / CHUNK_SIZE) === cx && Math.floor(p.y / CHUNK_SIZE) === cy);
+  const props: WorldProp[] = [...STARTER_PROPS, ...LANDMARK_PROPS].filter(p => Math.floor(p.x / CHUNK_SIZE) === cx && Math.floor(p.y / CHUNK_SIZE) === cy);
   for (let i = 0; i < 3; i++) {
     const seed = Math.floor(noise(cx * 7 + i, cy, 729) * 99999);
     const y = cy * CHUNK_SIZE + 14 + noise(cx, cy * 5 + i, 331) * 67;

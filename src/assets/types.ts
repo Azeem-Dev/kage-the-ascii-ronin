@@ -21,7 +21,7 @@ export interface AsciiAsset {
   id: string;
   version: number;
   name: string;
-  category: 'Character' | 'Vegetation' | 'Terrain';
+  category: 'Character' | 'Vegetation' | 'Terrain' | 'Creature' | 'Equipment' | 'Prop';
   description: string;
   width: number;
   height: number;

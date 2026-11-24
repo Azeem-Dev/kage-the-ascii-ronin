@@ -2,6 +2,10 @@ import { RONIN } from './ronin.ts';
 import { PINE } from './pine.ts';
 import { ROCK } from './rock.ts';
 import { HORSE } from './horse.ts';
+import { CHARACTERS } from './characters.ts';
+import { CREATURES } from './creatures.ts';
+import { EQUIPMENT } from './equipment.ts';
+import { PROPS } from './props.ts';
 import { noise, type AsciiAsset, type AsciiCell, type AssetOptions } from './types.ts';
 
 function grass(o: AssetOptions): AsciiCell[] {
@@ -44,6 +48,12 @@ export const ASSETS: readonly AsciiAsset[] = [
   PINE,
   ROCK,
   HORSE,
+  ...CHARACTERS,
+  ...CREATURES,
+  ...EQUIPMENT,
+  ...PROPS,
   { id: 'grass', version: 1, name: 'Wind meadow', category: 'Vegetation', description: 'Reusable patch with stable seeded distribution and a travelling wind field.', width: 80, height: 42, anchor: { x: 40, y: 38 }, variants: ['Meadow', 'Blue grass', 'Dry grass'], generate: grass },
   { id: 'water', version: 1, name: 'Quiet water', category: 'Terrain', description: 'Layered wave bands and an expanding wake, rendered entirely as glyph cells.', width: 80, height: 42, anchor: { x: 40, y: 38 }, variants: ['River', 'Jade pond', 'Night pool'], generate: water },
 ];
+
+export const ASSET_BY_ID: ReadonlyMap<string, AsciiAsset> = new Map(ASSETS.map(asset => [asset.id, asset]));

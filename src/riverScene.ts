@@ -2,9 +2,11 @@ import { RONIN } from './assets/ronin.ts';
 import { PINE } from './assets/pine.ts';
 import { ROCK } from './assets/rock.ts';
 import { HORSE } from './assets/horse.ts';
+import { ASSET_BY_ID } from './assets/catalog.ts';
 import { riverCenter, waterDepth } from './assets/landscape.ts';
 import type { AsciiAsset } from './assets/types.ts';
 import { WorldChunks } from './game/worldChunks.ts';
+import { LANDMARKS, regionAt } from './game/landmarks.ts';
 import { AssetRenderer } from './render/assetRenderer.ts';
 import { AssetCache, type PlacedSprite } from './render/assetCache.ts';
 import { TerrainLayer } from './render/terrainLayer.ts';
@@ -19,7 +21,7 @@ interface Ripple { x: number; y: number; born: number }
 export function startRiverScene(): void {
   document.title = 'KAGE / The whispering river';
   document.documentElement.className = 'river-view';
-  document.body.innerHTML = `<main class="river-game"><canvas id="world-canvas" aria-label="Playable ASCII river scene. Move with WASD or tap the ground."></canvas><div class="world-vignette"></div><header class="world-hud"><div><span class="world-kicker">KAGE / VISUAL FOUNDATION</span><h1>The whispering river</h1><p>Wind through the reeds. Moonlight on the current.</p></div><div class="world-region">ASHEN VALLEY<br><span id="world-state">RONIN · IVORY</span></div></header><div class="world-bottom"><div class="world-health">KAGE <span>[━━━━━━━━━━━━]</span><small id="world-location">RIVERBANK</small></div><div class="world-controls"><span>WASD</span> move <span>SHIFT</span> run <span>WHEEL</span> zoom <span>V</span> robe <span>P</span> pause <span>R</span> reset<br><small>Click / tap to walk · Reusable character, pines, stone, grass & water</small></div><span class="world-telemetry" id="world-stats"></span></div></main>`;
+  document.body.innerHTML = `<main class="river-game"><canvas id="world-canvas" aria-label="Playable ASCII river scene. Move with WASD or tap the ground."></canvas><div class="world-vignette"></div><header class="world-hud"><div><span class="world-kicker">KAGE / VISUAL FOUNDATION</span><h1>The whispering river</h1><p>Wind through the reeds. Moonlight on the current.</p></div><div class="world-region">ASHEN VALLEY<br><span id="world-state">KNIGHT · WEATHERED STEEL</span></div></header><div class="world-bottom"><div class="world-health">KAGE <span>[━━━━━━━━━━━━]</span><small id="world-location">RIVERBANK</small></div><div class="world-controls"><span>WASD</span> move <span>SHIFT</span> run <span>WHEEL</span> zoom <span>V</span> robe <span>P</span> pause <span>R</span> reset<br><small>Click / tap to walk · Reusable character, pines, stone, grass & water</small></div><span class="world-telemetry" id="world-stats"></span></div></main>`;
   const canvas = document.getElementById('world-canvas') as HTMLCanvasElement;
   const ctx = canvas.getContext('2d', { alpha: false });
   if (!ctx) throw new Error('Canvas 2D is required');
@@ -53,11 +55,16 @@ export function startRiverScene(): void {
     assetCache.clear();
   }
   size();
+  const requestedArea = new URLSearchParams(location.search).get('area');
+  const initialArea = LANDMARKS.find(area => area.id === requestedArea);
+  if (initialArea) { hero.x = initialArea.spawnX; hero.y = initialArea.spawnY; horse.x = hero.x + 27; horse.y = hero.y + 16; }
   addEventListener('resize', size);
   addEventListener('keydown', event => {
     if (['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(event.code)) event.preventDefault();
     keys.add(event.code);
     if (event.repeat) return;
+    const destination = LANDMARKS.find(area => area.key === event.code);
+    if (destination) { hero.x = destination.spawnX; hero.y = destination.spawnY; horse.x = hero.x + 27; horse.y = hero.y + 16; target = null; mounted = false; }
     if (event.code === 'KeyP') paused = !paused;
     if (event.code === 'KeyV') hero.variant = (hero.variant + 1) % RONIN.variants.length;
     if (event.code === 'KeyE' && !paused) {
@@ -94,7 +101,11 @@ export function startRiverScene(): void {
     const props = world.around(hero.x, hero.y, cols * detailStep, rows * detailStep);
     if (props !== lastProps) {
       lastProps = props;
-      instances = props.map(prop => ({ ...prop, asset: prop.assetId === 'pine' ? PINE : ROCK }));
+      instances = props.map(prop => {
+        const asset = ASSET_BY_ID.get(prop.assetId);
+        if (!asset) throw new Error(`Unknown world asset ${prop.assetId}`);
+        return { ...prop, asset };
+      });
     }
     const dt = Math.min(.05, (now - last) / 1000); last = now;
     if (!paused) {
@@ -114,7 +125,7 @@ export function startRiverScene(): void {
         const speed = (mounted ? running ? CONFIG.exploration.gallopSpeed : CONFIG.exploration.rideSpeed : running ? CONFIG.exploration.runSpeed : CONFIG.exploration.walkSpeed) * (waterDepth(hero.x, hero.y) > 0 ? .55 : 1);
         const nx = hero.x + mx / length * speed * dt;
         const ny = hero.y + my / length * speed * dt;
-        const blocked = instances.some(instance => Math.hypot((nx - instance.x) / (instance.asset === PINE ? 3 : 8), (ny - instance.y) / 3) < 1);
+        const blocked = instances.some(instance => ['Vegetation', 'Terrain', 'Prop'].includes(instance.asset.category) && Math.hypot((nx - instance.x) / (instance.asset === PINE ? 3 : 8), (ny - instance.y) / 3) < 1);
         if (!blocked) { hero.x = nx; hero.y = ny; }
         if (mx) hero.facing = mx > 0 ? 'right' : 'left';
       }
@@ -152,22 +163,22 @@ export function startRiverScene(): void {
       if (instance.x + width < cameraX || instance.x - width > cameraX + cols * detailStep || instance.y < cameraY || instance.y - height > cameraY + rows * detailStep) continue;
       // Distant LOD remains deterministic; static foliage never flashes between
       // independently rounded regeneration frames.
-      if (detailStep > 1 && instance.asset === PINE && instance.seed % detailStep !== 0) continue;
       draws.push({ y: instance.y, draw: () => {
-        shadow(ids, instance.x + 4, instance.y + 1, instance.asset === PINE ? 18 : 10, 3);
-        const compiled = assetCache.get(instance.asset, { time: 0, seed: instance.seed, variant: instance.variant, action: 'idle', facing: 'right' }, instance.scale / detailStep);
-        place(ids, compiled, instance.x, instance.y);
+        const flying = instance.asset.category === 'Creature';
+        if (!flying) shadow(ids, instance.x + 4, instance.y + 1, instance.asset === PINE ? 18 : 10, 3);
+        const compiled = assetCache.get(instance.asset, { time: flying ? time + instance.seed % 5 : 0, seed: instance.seed, variant: instance.variant, action: 'idle', facing: 'right' }, instance.scale / detailStep, flying);
+        place(ids, compiled, instance.x + (flying ? Math.sin(time * .7 + instance.seed) * 6 : 0), instance.y + (flying ? Math.cos(time * .9 + instance.seed) * 3 : 0));
       } });
     }
     const actorOptions = { time, seed: 17, variant: hero.variant, action: hero.moving ? 'walk' as const : 'idle' as const, facing: hero.facing };
     draws.push({ y: horse.y, draw: () => {
       shadow(ids, horse.x, horse.y, 24, 3);
-      place(ids, assetCache.get(HORSE, { ...actorOptions, seed: 31, variant: 0, action: mounted && hero.moving ? 'walk' : 'idle', facing: horse.facing }, .55 / detailStep, true), horse.x, horse.y);
-      if (mounted) place(ids, assetCache.get(RONIN, { ...actorOptions, action: 'idle' }, .38 / detailStep, true), hero.x - (hero.facing === 'right' ? 2 : -2), hero.y - 14);
+      place(ids, assetCache.get(HORSE, { ...actorOptions, seed: 31, variant: 0, action: mounted && hero.moving ? 'walk' : 'idle', facing: horse.facing }, .48 / detailStep, true), horse.x, horse.y);
+      if (mounted) place(ids, assetCache.get(RONIN, { ...actorOptions, action: 'idle' }, .25 / detailStep, true), hero.x - (hero.facing === 'right' ? 2 : -2), hero.y - 14);
     } });
     if (!mounted) draws.push({ y: hero.y, draw: () => {
       shadow(ids, hero.x, hero.y + 1, 10, 2);
-      place(ids, assetCache.get(RONIN, actorOptions, .5 / detailStep, true), hero.x, hero.y);
+      place(ids, assetCache.get(RONIN, actorOptions, .35 / detailStep, true), hero.x, hero.y);
     } });
     draws.sort((a, b) => a.y - b.y).forEach(item => item.draw());
     const generationEnd = performance.now();
@@ -182,7 +193,8 @@ export function startRiverScene(): void {
       const stats = document.getElementById('world-stats'); if (stats) stats.textContent = `${world.loadedCount} CHUNKS / ${cols}×${rows} / ${fps} FPS`;
     }
     const location = document.getElementById('world-location'); if (location) location.textContent = waterDepth(hero.x, hero.y) > 0 ? 'WADING · RIVER CURRENT' : 'RIVERBANK · WIND MEADOW';
-    const state = document.getElementById('world-state'); if (state) state.textContent = `${paused ? 'PAUSED' : 'RONIN'} · ${RONIN.variants[hero.variant].toUpperCase()}`;
+    const state = document.getElementById('world-state'); if (state) state.textContent = `${paused ? 'PAUSED' : 'KNIGHT'} · ${RONIN.variants[hero.variant].toUpperCase()}`;
+    const region = document.querySelector('.world-region'); if (region?.firstChild) region.firstChild.textContent = regionAt(hero.x, hero.y).toUpperCase();
     // Read-only diagnostics used by browser smoke tests and future tooling.
     canvas.dataset.playerX = hero.x.toFixed(2); canvas.dataset.playerY = hero.y.toFixed(2); canvas.dataset.time = time.toFixed(2);
     canvas.dataset.loadedChunks = String(world.loadedCount);

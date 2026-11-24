@@ -37,7 +37,7 @@ export class TerrainLayer {
       this.animated.set(this.base);
       for (const sample of this.water) {
         const phase = Math.sin(sample.x * .13 + sample.y * .17 - tick * .18);
-        this.animated[sample.index] = this.renderer.glyph(phase > .5 ? '-' : phase < -.5 ? ',' : '.', sample.color);
+        this.animated[sample.index] = this.renderer.glyph(phase > .7 ? 'o' : phase < -.5 ? ',' : '.', phase > .7 ? '#8fa9ad' : sample.color);
       }
     }
     return this.animated;

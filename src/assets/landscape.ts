@@ -35,12 +35,12 @@ export function landscapeCell(x: number, y: number, time: number, seed: number):
   }
   const { n, depth, cluster } = tile;
   if (depth > 0) {
-    const flow = Math.sin(x * .2 + y * .17 - time * 1.7) * .45 + Math.sin(y * .3 - time * 2.3 + Math.sin(x * .12)) * .35;
-    const streak = Math.sin(x * .7 + Math.sin(y * .1 - time) * 1.7);
-    const light = (flow + 1) * .5;
-    if (n < .24 && light < .7) return null;
-    const foam = streak > .9 && flow > .32 && n > .76;
-    return { x, y, glyph: foam ? ['o', '°', '*', ':'][Math.floor(n * 4) % 4] : light > .65 && n > .55 ? '-' : n > .8 ? ',' : '.', color: WATER[foam ? 5 : Math.max(0, Math.min(3, Math.floor(light * 4)))] };
+    const current = Math.sin(x * .53 + Math.sin(y * .063) * 2.8);
+    if (n < .52) return null;
+    const foam = current > .92 && n > .91;
+    // Reference target: black depth with narrow, winding silver current traces,
+    // not evenly illuminated horizontal wave stripes.
+    return { x, y, glyph: foam ? ['o', '°', '*', ':'][Math.floor(n * 4) % 4] : n > .89 ? ',' : '.', color: WATER[foam ? 5 : current > .8 ? 2 : n > .8 ? 1 : 0] };
   }
   // Undercut banks: a genuinely dark side between water and the upper meadow.
   if (depth > -7) {

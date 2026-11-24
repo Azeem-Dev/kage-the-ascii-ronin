@@ -9,7 +9,11 @@ function load(location) {
   const absolute = path.resolve(location);
   const source = fs.readFileSync(absolute, 'utf8');
   let js = ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext } }).outputText;
-  js = js.replace(/from ['"](.+?\.ts)['"]/g, (_, relative) => `from ${JSON.stringify(load(path.resolve(path.dirname(absolute), relative)))}`);
+  js = js.replace(/from ['"](.+?\.(?:ts|json))['"]/g, (_, relative) => {
+    const target = path.resolve(path.dirname(absolute), relative);
+    const url = relative.endsWith('.json') ? `data:text/javascript;base64,${Buffer.from('export default ' + fs.readFileSync(target, 'utf8')).toString('base64')}` : load(target);
+    return `from ${JSON.stringify(url)}`;
+  });
   return `data:text/javascript;base64,${Buffer.from(js).toString('base64')}`;
 }
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -28,7 +32,7 @@ for (const asset of ASSETS) {
       assert(first.length > 0, `${asset.id} is empty`);
       validateFrame(asset, first);
       assert.deepEqual(first, asset.generate(options), `${asset.id} is not deterministic`);
-      if (asset.id !== 'rock') assert.notDeepEqual(first, asset.generate({ ...options, time: 3.7 }), `${asset.id} does not animate`);
+      if (!['Equipment', 'Prop'].includes(asset.category) && asset.id !== 'rock') assert.notDeepEqual(first, asset.generate({ ...options, time: 3.7 }), `${asset.id} does not animate`);
       frames++;
     }
   }

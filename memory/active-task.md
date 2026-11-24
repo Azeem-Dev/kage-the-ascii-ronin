@@ -1,5 +1,11 @@
 # Active task
 
+Latest user feedback and prioritized open work are recorded in `ISSUES.md` at the
+repository root. It supersedes any implication below that earlier passing checks
+resolved the user's later reports about visibility, speed, collision, rendering,
+animation, riding or world quality. This turn only documents issues; no game fixes
+were implemented or verified during this documentation update.
+
 Build a full-screen playable ASCII open world using reusable assets. The user explicitly rejected a workshop/dashboard and in-app approval controls: show the running game and receive feedback in conversation. Preserve the legacy scene at `?mode=game`. Update both master prompts and leave a DeepSeek handoff.
 
 References: originally ten videos, now 22 in `motivation/`; all sampled at four timestamps. Additional references include Moonlit Cave, a furry spider, Obsidian Paladin and layered animated creatures. Quality targets: detailed silhouettes, fine shaded glyphs, animated vegetation/water. Underlying reference renderer technology is unknown.

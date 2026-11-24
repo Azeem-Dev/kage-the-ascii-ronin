@@ -13,7 +13,7 @@ try {
   await page.waitForFunction(() => Number(document.querySelector('canvas')?.dataset.time) > .3);
   const initialTrees = Number(await canvas.getAttribute('data-visible-trees'));
   await page.mouse.wheel(0, 4000);
-  await page.waitForFunction(() => document.querySelector('canvas')?.dataset.zoom === '0.25');
+  await page.waitForFunction(() => document.querySelector('canvas')?.dataset.zoom === '0.40');
   assert(Number(await canvas.getAttribute('data-visible-trees')) >= initialTrees, 'Zoom-out removes in-view trees');
   await page.keyboard.press('KeyR');
   await page.waitForFunction(() => document.querySelector('canvas')?.dataset.zoom === '0.80');

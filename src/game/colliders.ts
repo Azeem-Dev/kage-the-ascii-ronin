@@ -5,7 +5,7 @@ export interface ColliderSource {
   x: number;
   y: number;
   scale: number;
-  asset: { id: string; category: string; width: number };
+  asset: { id: string; category: string; width: number; footprint?: readonly { x: number; y: number; radius: number }[] };
 }
 
 /** Ground footprint of a placed prop, in world units (sprite units x scale).
@@ -14,6 +14,8 @@ export interface ColliderSource {
  * Offsets are measured from the asset's ground anchor (props.ts: x = 48). */
 export function collidersFor(item: ColliderSource): Collider[] {
   const { x, y, scale, asset } = item;
+  // Assets that declare their own footprint (buildings, fences, carts) use it directly.
+  if (asset.footprint) return asset.footprint.map(c => ({ x: x + c.x * scale, y: y + c.y * scale, radius: Math.max(1.5, c.radius * scale) }));
   switch (asset.id) {
     case 'pine': return [{ x, y, radius: 3 }];
     case 'rock': return [{ x, y, radius: 6 }];

@@ -22,7 +22,7 @@ try {
   await page.goto('http://127.0.0.1:3000/');
   await page.waitForFunction(() => Number(document.querySelector('canvas')?.dataset.time) > .2);
   await page.mouse.wheel(0, 4000);
-  await page.waitForFunction(() => document.querySelector('canvas')?.dataset.zoom === '0.25');
+  await page.waitForFunction(() => document.querySelector('canvas')?.dataset.zoom === '0.40');
   await sample(20); // Warm glyph/sprite caches before the steady-state comparison.
   const stationary = await sample();
   const grassBefore = await page.locator('canvas').evaluate(c => Array.from(c.getContext('2d').getImageData(12, 12, 40, 40).data));
@@ -39,7 +39,7 @@ try {
   assert(Number(moving.diagnostics.playerX) > startX + 1, 'Movement stopped');
   await page.screenshot({ path: 'artifacts/preview/optimized-wide-moving.png' });
   await page.mouse.wheel(0, -4000);
-  await page.waitForFunction(() => document.querySelector('canvas')?.dataset.zoom === '5.00');
+  await page.waitForFunction(() => document.querySelector('canvas')?.dataset.zoom === '1.80');
   await page.screenshot({ path: 'artifacts/preview/maximum-zoom.png' });
   await page.keyboard.press('KeyR');
   await page.keyboard.press('KeyE');
@@ -53,7 +53,7 @@ try {
   await sample(20);
   assert.equal(await page.locator('canvas').evaluate(c => c.toDataURL()), before, 'Paused scene changes');
   assert.deepEqual(errors, []);
-  const report = { viewport: [1866, 900], browser: await browser.version(), baselineBeforeOptimization: { fps: 5.493449, maxMs: 373.8, note: 'Same headless Chrome, viewport and zoom; 60 frames before caching/dirty-cell changes.' }, stationary, moving, checks: ['stable grass pixels', 'bounded idle dirty cells', 'movement', '0.25 and 5 zoom limits', 'mount/dismount', 'pause pixels', 'no page errors'] };
+  const report = { viewport: [1866, 900], browser: await browser.version(), baselineBeforeOptimization: { fps: 5.493449, maxMs: 373.8, note: 'Same headless Chrome, viewport and zoom; 60 frames before caching/dirty-cell changes.' }, stationary, moving, checks: ['stable grass pixels', 'bounded idle dirty cells', 'movement', '0.4 and 1.8 zoom limits', 'mount/dismount', 'pause pixels', 'no page errors'] };
   await fs.writeFile('artifacts/preview/optimization-performance.json', JSON.stringify(report, null, 2));
   console.log(JSON.stringify(report));
 } finally { await browser.close(); }

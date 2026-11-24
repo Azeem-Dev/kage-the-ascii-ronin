@@ -28,6 +28,11 @@ export interface AsciiAsset {
   anchor: { x: number; y: number };
   variants: readonly string[];
   generate: (options: AssetOptions) => AsciiCell[];
+  /** Optional ground footprint in asset-local cells, relative to the anchor
+   * (x right, y down). Each circle blocks movement once scaled into the world. */
+  footprint?: readonly { x: number; y: number; radius: number }[];
+  /** Optional light source in asset-local cells relative to the anchor; colour is 0..1 RGB. */
+  light?: { x: number; y: number; radius: number; color: readonly [number, number, number] };
 }
 
 /** Deterministic spatial noise: animation must never reseed static texture. */

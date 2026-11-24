@@ -8,7 +8,7 @@ import { riverCenter, waterDepth } from './assets/landscape.ts';
 import type { AsciiAsset } from './assets/types.ts';
 import { WorldChunks } from './game/worldChunks.ts';
 import { LANDMARKS, regionAt } from './game/landmarks.ts';
-import { AssetRenderer } from './render/assetRenderer.ts';
+import { AssetRenderer, LAYER } from './render/assetRenderer.ts';
 import { AssetCache, type PlacedSprite } from './render/assetCache.ts';
 import { TerrainLayer } from './render/terrainLayer.ts';
 import { CONFIG } from './config.ts';
@@ -53,13 +53,13 @@ export function startRiverScene(): void {
   const world = new WorldChunks();
   const assetCache = new AssetCache(renderer);
   const terrain = new TerrainLayer(renderer);
-  const shadowId = renderer.glyph('.', '#111d20');
   const wakeIds = ['#8ea7aa', '#4b6973', '#a8beba', '#48646e'].map(color => ['o', '.', '-'].map(glyph => renderer.glyph(glyph, color)));
   let lastProps: ReturnType<WorldChunks['around']> | null = null;
   let instances: Instance[] = [];
   // Derived from `instances` only when the chunk window changes, not every frame.
   let colliders: Collider[] = [];
   let lanterns: Instance[] = [];
+  const missingAssets = new Set<string>();
   let riverRocks: Instance[] = [];
   const footstepIds = {
     fresh: renderer.glyph('_', '#7a986f'),
@@ -73,12 +73,14 @@ export function startRiverScene(): void {
     if (!node || lastText.get(key) === value) return;
     lastText.set(key, value); node.textContent = value;
   };
-  let lastFilter = ''; let lastDiagnostics = -Infinity;
+  let lastFilter = 'reset'; let lastDiagnostics = -Infinity;
   function size(): void {
     // Coarser distant samples bound framebuffer work at the widest zoom.
     detailStep = Math.max(1, Math.ceil(.8 / zoom));
-    cols = Math.ceil(innerWidth / (4 * zoom * detailStep)); rows = Math.ceil(innerHeight / (6 * zoom * detailStep));
-    renderer.resizeGlyphs(Math.max(4, Math.round(4 * zoom * detailStep)), Math.max(6, Math.round(6 * zoom * detailStep)));
+    // Glyphs are rasterized at device pixels so they stay crisp on scaled displays.
+    const dpr = Math.max(1, Math.min(2, devicePixelRatio || 1));
+    renderer.resizeGlyphs(Math.max(4, Math.round(4 * zoom * detailStep * dpr)), Math.max(6, Math.round(6 * zoom * detailStep * dpr)));
+    cols = Math.max(1, Math.ceil(innerWidth * dpr / renderer.cellWidth)); rows = Math.max(1, Math.ceil(innerHeight * dpr / renderer.cellHeight));
     if (canvas.width !== cols * renderer.cellWidth) canvas.width = cols * renderer.cellWidth;
     if (canvas.height !== rows * renderer.cellHeight) canvas.height = rows * renderer.cellHeight;
     assetCache.clear();
@@ -178,7 +180,7 @@ export function startRiverScene(): void {
     if (event.code === 'KeyV') hero.variant = (hero.variant + 1) % playable[playerIndex].variants.length;
     if (event.code === 'KeyH') { playerIndex = (playerIndex + 1) % playable.length; hero.variant = 0; }
     if (event.code === 'KeyE' && !paused) {
-      if (mounted) { mounted = false; hero.x = horse.x + 18; hero.y = horse.y; }
+      if (mounted) { mounted = false; hero.x = horse.x; hero.y = horse.y + 10; }
       else if (Math.hypot(hero.x - horse.x, hero.y - horse.y) < 36) { mounted = true; hero.x = horse.x; hero.y = horse.y; target = null; }
     }
     if (event.code === 'KeyR') { hero.x = riverCenter(230) + 69; hero.y = 230; hero.vx = 0; hero.vy = 0; horse.x = hero.x + 27; horse.y = hero.y + 16; mounted = false; target = null; zoom = CONFIG.exploration.defaultZoom; size(); }
@@ -198,17 +200,33 @@ export function startRiverScene(): void {
     target = { x: cameraX + event.clientX / innerWidth * cols * detailStep, y: cameraY + event.clientY / innerHeight * rows * detailStep };
   });
 
-  function place(ids: Uint32Array, compiled: PlacedSprite, x: number, y: number): void {
-    renderer.stamp(ids, cols, rows, compiled.sprite, (x - cameraX) / detailStep - compiled.anchorX, (y - cameraY) / detailStep - compiled.anchorY);
+  function place(ids: Uint32Array, compiled: PlacedSprite, x: number, y: number, layer: number = LAYER.prop, castShadow = true): void {
+    const sx = (x - cameraX) / detailStep; const sy = (y - cameraY) / detailStep;
+    renderer.stamp(ids, cols, rows, compiled.sprite, sx - compiled.anchorX, sy - compiled.anchorY, layer, castShadow ? sy : undefined);
   }
   function plot(ids: Uint32Array, x: number, y: number, id: number): void {
     const sx = Math.round((x - cameraX) / detailStep); const sy = Math.round((y - cameraY) / detailStep);
     if (sx >= 0 && sy >= 0 && sx < cols && sy < rows) ids[sy * cols + sx] = id;
   }
-  function shadow(ids: Uint32Array, x: number, y: number, rx: number, ry: number): void {
-    for (let sy = -ry; sy <= ry; sy += detailStep) for (let sx = -rx; sx <= rx; sx += detailStep) {
-      if ((sx / rx) ** 2 + (sy / ry) ** 2 < 1) plot(ids, x + sx, y + sy, shadowId);
-    }
+  function shadow(_ids: Uint32Array, x: number, y: number, rx: number, ry: number): void {
+    renderer.contactShadow(cols, rows, (x - cameraX) / detailStep, (y - cameraY) / detailStep, Math.max(1, rx * .7 / detailStep), Math.max(1, ry / detailStep));
+  }
+  /** 1 at noon, 0 at midnight. */
+  function dayFactor(): number { return Math.sin(atmosphere.daylight * Math.PI * 2) * .5 + .5; }
+  /** Time of day drives ambient colour, sun/moon strength and shadow direction. */
+  function applyLighting(): void {
+    const d = dayFactor();
+    const dusk = Math.max(0, 1 - Math.abs(d - .45) / .25); // warm band around sunrise/sunset
+    const mix = (night: number, day: number) => night + (day - night) * d;
+    const angle = atmosphere.daylight * Math.PI * 2;
+    renderer.lighting = {
+      ambient: [mix(.36, .8) + dusk * .1, mix(.44, .82) + dusk * .02, mix(.7, .8) - dusk * .08],
+      sun: mix(.18, .62),
+      sunColor: d > .5 ? [1, .94 - dusk * .15, .82 - dusk * .3] : [.55, .68, 1],
+      shadowX: Math.cos(angle) * (d > .5 ? .7 : -.5),
+      shadowY: .16 + (1 - Math.abs(Math.cos(angle))) * .12,
+      saturation: 1.12 + d * .08,
+    };
   }
   function tick(now: number): void {
     if (!ctx) return;
@@ -216,13 +234,14 @@ export function startRiverScene(): void {
     const props = world.around(hero.x, hero.y, cols * detailStep, rows * detailStep);
     if (props !== lastProps) {
       lastProps = props;
-      instances = props.map(prop => {
+      // Placements may reference assets that are still being built; skip them (warn once).
+      instances = props.flatMap(prop => {
         const asset = ASSET_BY_ID.get(prop.assetId);
-        if (!asset) throw new Error(`Unknown world asset ${prop.assetId}`);
-        return { ...prop, asset };
+        if (!asset) { if (!missingAssets.has(prop.assetId)) { missingAssets.add(prop.assetId); console.warn(`World placement skipped: unknown asset "${prop.assetId}"`); } return []; }
+        return [{ ...prop, asset }];
       });
       colliders = instances.flatMap(collidersFor);
-      lanterns = instances.filter(instance => instance.asset.id === 'lantern');
+      lanterns = instances.filter(instance => instance.asset.id === 'lantern' || instance.asset.light);
       riverRocks = instances.filter(instance => instance.asset === ROCK && waterDepth(instance.x, instance.y) > 0);
     }
     const dt = Math.min(.05, (now - last) / 1000); last = now;
@@ -241,7 +260,9 @@ export function startRiverScene(): void {
       const running = keys.has('ShiftLeft') || keys.has('ShiftRight');
       const speed = (mounted ? running ? CONFIG.exploration.gallopSpeed : CONFIG.exploration.rideSpeed : running ? CONFIG.exploration.runSpeed : CONFIG.exploration.walkSpeed) * (waterDepth(hero.x, hero.y) > 0 ? .55 : 1);
       const oldX = hero.x; const oldY = hero.y;
-      moveBody(hero, mx, my, speed, dt, colliders, mounted ? 4 : 2);
+      // Interim: the standing horse is solid along its body (Agent D's body-vs-body system will replace this).
+      const obstacles = mounted ? colliders : colliders.concat([-24, -12, 0, 12, 24].map(offset => ({ x: horse.x + offset, y: horse.y - 1, radius: 5 })));
+      moveBody(hero, mx, my, speed, dt, obstacles, mounted ? 4 : 2);
       hero.moving = Math.hypot(hero.x - oldX, hero.y - oldY) > .01;
       if (length && mx) hero.facing = mx > 0 ? 'right' : 'left';
       stepDistance += Math.hypot(hero.x - oldX, hero.y - oldY);
@@ -261,6 +282,7 @@ export function startRiverScene(): void {
     // unit must not replace every distant grass/stone sample with random detail.
     cameraX = Math.floor((hero.x - cols * detailStep * .61) / detailStep) * detailStep;
     cameraY = Math.floor((hero.y - rows * detailStep * .62) / detailStep) * detailStep;
+    applyLighting();
     const ids = renderer.begin(terrain.get(cameraX, cameraY, cols, rows, detailStep, time));
     const terrainEnd = performance.now();
     for (const step of footsteps) {
@@ -296,24 +318,31 @@ export function startRiverScene(): void {
         const flying = instance.asset.category === 'Creature';
         if (!flying) shadow(ids, instance.x + 4, instance.y + 1, instance.asset === PINE ? 18 : 10, 3);
         const compiled = assetCache.get(instance.asset, { time: flying ? time + instance.seed % 5 : 0, seed: instance.seed, variant: instance.variant, action: 'idle', facing: 'right' }, instance.scale / detailStep, flying);
-        place(ids, compiled, instance.x + (flying ? Math.sin(time * .7 + instance.seed) * 6 : 0), instance.y + (flying ? Math.cos(time * .9 + instance.seed) * 3 : 0));
+        place(ids, compiled, instance.x + (flying ? Math.sin(time * .7 + instance.seed) * 6 : 0), instance.y + (flying ? Math.cos(time * .9 + instance.seed) * 3 : 0), flying ? LAYER.effect : LAYER.prop, !flying);
       } });
     }
     const actorOptions = { time, seed: 17, variant: hero.variant, action: hero.moving ? 'walk' as const : 'idle' as const, facing: hero.facing };
     draws.push({ y: horse.y, draw: () => {
       shadow(ids, horse.x, horse.y, 24, 3);
-      place(ids, assetCache.get(HORSE, { ...actorOptions, seed: 31, variant: 0, action: mounted && hero.moving ? 'walk' : 'idle', facing: horse.facing }, .48 / detailStep, true), horse.x, horse.y);
-      if (mounted) place(ids, assetCache.get(playable[playerIndex], { ...actorOptions, action: 'idle' }, 29 / playable[playerIndex].height / detailStep, true), hero.x - (hero.facing === 'right' ? 2 : -2), hero.y - 14 + (hero.moving ? Math.abs(Math.sin(time * 6)) : 0));
+      place(ids, assetCache.get(HORSE, { ...actorOptions, seed: 31, variant: 0, action: mounted && hero.moving ? 'walk' : 'idle', facing: horse.facing }, .48 / detailStep, true), horse.x, horse.y, mounted ? LAYER.actor : LAYER.prop);
+      if (mounted) place(ids, assetCache.get(playable[playerIndex], { ...actorOptions, action: 'idle' }, 29 / playable[playerIndex].height / detailStep, true), hero.x - (hero.facing === 'right' ? 2 : -2), hero.y - 14 + (hero.moving ? Math.abs(Math.sin(time * 6)) : 0), LAYER.actor, false);
     } });
     if (!mounted) draws.push({ y: hero.y, draw: () => {
       shadow(ids, hero.x, hero.y + 1, 10, 2);
       const asset = playable[playerIndex];
-      place(ids, assetCache.get(asset, actorOptions, (asset.id.startsWith('dwarf') ? 30 : 41) / asset.height / detailStep, true), hero.x, hero.y);
+      place(ids, assetCache.get(asset, actorOptions, (asset.id.startsWith('dwarf') ? 30 : 41) / asset.height / detailStep, true), hero.x, hero.y, LAYER.actor);
     } });
     draws.sort((a, b) => a.y - b.y).forEach(item => item.draw());
-    const daytime = atmosphere.brightness > 1.1;
-    renderer.illuminate(ids, cols, rows, (hero.x - (daytime ? 45 : 30) - cameraX) / detailStep, (hero.y - 35 - cameraY) / detailStep, (daytime ? 75 : 60) / detailStep, daytime);
-    for (const lamp of lanterns) renderer.illuminate(ids, cols, rows, (lamp.x - cameraX) / detailStep, (lamp.y - 6 - cameraY) / detailStep, 23 / detailStep, true);
+    // Lights: lanterns glow at all times and dominate at night; the hero carries a faint light after dusk.
+    const night = 1 - dayFactor();
+    for (const lamp of lanterns) {
+      const light = lamp.asset.light;
+      const glow = .35 + night;
+      if (!light) { renderer.addLight(cols, rows, (lamp.x - cameraX) / detailStep, (lamp.y - 6 - cameraY) / detailStep, (34 + night * 26) / detailStep, .95 * glow, .58 * glow, .24 * glow); continue; }
+      const [r, g, b] = light.color;
+      renderer.addLight(cols, rows, (lamp.x + light.x * lamp.scale - cameraX) / detailStep, (lamp.y + light.y * lamp.scale - cameraY) / detailStep, light.radius * lamp.scale * (.7 + night * .5) / detailStep, r * glow, g * glow, b * glow);
+    }
+    if (night > .35) renderer.addLight(cols, rows, (hero.x - cameraX) / detailStep, (hero.y - 18 - cameraY) / detailStep, 46 / detailStep, .35 * night, .3 * night, .22 * night);
     const generationEnd = performance.now();
     atmosphere.render(ids, cols, rows, cameraX, cameraY, detailStep, time);
     const canScroll = lastCols === cols && lastRows === rows && lastDetailStep === detailStep && Number.isFinite(lastCameraX);
@@ -322,8 +351,7 @@ export function startRiverScene(): void {
     renderer.present(ctx, ids, cols, rows, scrollX, scrollY);
     lastCameraX = cameraX; lastCameraY = cameraY;
     lastCols = cols; lastRows = rows; lastDetailStep = detailStep;
-    const filter = `brightness(${atmosphere.brightness.toFixed(2)}) saturate(1.18)`;
-    if (filter !== lastFilter) { lastFilter = filter; canvas.style.filter = filter; }
+    if (lastFilter) { lastFilter = ''; canvas.style.filter = ''; }
     canvas.dataset.generateMs = (generationEnd - renderStart).toFixed(1);
     canvas.dataset.terrainMs = (terrainEnd - renderStart).toFixed(1);
     canvas.dataset.blitMs = (performance.now() - generationEnd).toFixed(1);

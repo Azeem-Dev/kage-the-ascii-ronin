@@ -1,6 +1,6 @@
 import { noise } from '../assets/types.ts';
 import { riverCenter, riverWidth } from '../assets/landscape.ts';
-import { AssetRenderer } from '../render/assetRenderer.ts';
+import { AssetRenderer, LAYER } from '../render/assetRenderer.ts';
 
 export class Atmosphere {
   rain = 0;
@@ -12,7 +12,7 @@ export class Atmosphere {
     crest: number; crestAlt: number; mid: number; tail: number;
     rain: number; rainTrail: number; fly: [number, number]; flyDim: [number, number];
   };
-  constructor(renderer: AssetRenderer) {
+  constructor(private renderer: AssetRenderer) {
     this.ids = {
       crest: renderer.glyph('o', '#b6d1d0'), crestAlt: renderer.glyph('°', '#b6d1d0'),
       mid: renderer.glyph(':', '#6f9fa9'), tail: renderer.glyph('.', '#344f63'),
@@ -27,9 +27,10 @@ export class Atmosphere {
 
   render(ids: Uint32Array, cols: number, rows: number, cameraX: number, cameraY: number, step: number, time: number): void {
     const g = this.ids;
+    const layers = this.renderer.layers.length === ids.length ? this.renderer.layers : null;
     const put = (x: number, y: number, id: number) => {
       x = Math.round(x); y = Math.round(y);
-      if (x >= 0 && y >= 0 && x < cols && y < rows) ids[y * cols + x] = id;
+      if (x >= 0 && y >= 0 && x < cols && y < rows) { const i = y * cols + x; ids[i] = id; if (layers) layers[i] = LAYER.effect; }
     };
     // Analytic downstream advection. Trails travel with the river's changing
     // centerline instead of swapping symbols in stationary screen locations.

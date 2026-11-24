@@ -1,191 +1,180 @@
 # KAGE: The ASCII Ronin — story script
 
+## Logline
+
+A burnt-out gamer who has finished his favourite game a hundred times falls into it, waking
+up inside its doomed samurai hero on the night the story begins. He knows every event that
+is coming. The world starts to change the moment he uses that knowledge.
+
 ## Premise
 
-The world of **Kaigen** was written, not made. Long ago the Ink Sage brushed every
-river, tree and soul into being as living characters. That is why everything you see
-is drawn in glyphs. Where the ink is strong the world is bright and full. Where it
-fades, things thin to dots and then to nothing.
+**Ren Arata**, 27, works nights in a convenience store and plays one game: **KAGE**, a cult
+ASCII samurai RPG. He holds the world-record speedrun, has seen every ending and knows every
+line. He knows the sad truth fans argue about: in every route, the little beggar girl Pip
+dies in Act II, and the hero Kage dies in the final duel. There is no good ending.
 
-Now something is **erasing** the world. Villages wake to find a well, a bridge or a
-neighbour simply gone, leaving a blank patch of ground. The people call it **the Blank**.
+At 3:33 a.m., during a record attempt, the game freezes on a screen Ren has never seen:
 
-**Kage** ("shadow") is a samurai with no lord. His master, Lord Sōma of the river
-domain, was erased in a single night along with his whole castle. Kage was away. Only he
-and his horse **Tsuki** ("moon") remember the castle existed. Everyone else's memory of
-it was erased too.
+```
+  CONTINUE?   > YES     NO
+```
 
-A samurai without a master is a ronin. A ronin who remembers what the world forgot
-is the only one who can write it back.
+The cursor moves to **YES** by itself. The monitor's glyphs pour out across the desk, up his
+arms, over his face, and the room dissolves into characters.
 
-**Tone:** quiet, moonlit, melancholy, with warmth in the towns and humour in the
-goblins. Short dialogue. Long silences. Wind in the grass.
+He wakes on a moonlit riverbank in armour, with a katana at his hip and a white horse nudging
+his shoulder. Reflected in the water, he sees **Kage's** face, and the game's opening line
+plays in his head a second before the wind actually carries it:
 
-**Core loop:** explore a region, help its people, fight what the Blank has corrupted,
-recover a **Brushstroke** (a fragment of the Ink Sage's brush), and use it to rewrite
-something erased.
+> *"The castle is gone. Only the shadow remembers."*
+
+He is inside the game, at the very start, on the night Lord Sōma's castle is erased.
+
+## The world (in-game lore)
+
+The world of **Kaigen** was written, not made. The Ink Sage brushed every river, tree and
+soul into being as living characters, which is why everything is drawn in glyphs. Now
+**the Blank** is erasing it: villages wake to find a well, a bridge or a neighbour simply
+gone. In the original game, Kage is the masterless samurai who fights it and fails.
+
+## The power: Foresight
+
+Ren's real-world knowledge shows up in the game as a power. When he focuses, the world
+drops into **raw ASCII wireframe**: colour drains, everything becomes bare glyphs, and
+ghostly white characters replay what *will* happen.
+
+| Level | What it shows | Cooldown / cost |
+|---|---|---|
+| **Glimpse** (start) | The next 3 seconds of a fight: enemy attack paths drawn as glyph trails | 20 s cooldown |
+| **Read** (Act I end) | Where a quest is heading: the "canon" outcome as a short vision | 1 Ink per use; Ink refills at shrines |
+| **Walkthrough** (Act II) | Hidden paths, secrets, weak points: what a speedrunner would know | 45 s; leaves him drained (slower stamina) |
+| **Branch** (Act III) | Two or three futures at once, for allies too | Big Ink cost; once per battle |
+| **Rewind** (final) | Undo the last few seconds, once | Single use per fight |
+
+**The catch: Divergence.** Foresight shows the future of the *original* game. Every time Ren
+changes a major event, the story drifts from canon and his visions grow less reliable. They
+flicker, show static, or show futures that no longer happen. The Divergence meter is on the
+HUD. Saving people raises it. The more good Ren does, the more blind he becomes.
+
+That is the heart of the game: **certainty versus caring.** Play it safe and follow canon,
+or save people and walk into a future nobody has seen.
 
 ## Main cast
 
-| Character | Who they are | Where (current game area) |
-|---|---|---|
-| **Kage** | Masterless samurai, calm, few words, sharp blade, pale cape. Player. | Starts at the Whispering River |
-| **Tsuki** | His white horse. Mountable. Hates goblins. | Always nearby |
-| **Lord Sōma** | Kage's erased master. Seen only in memories and the final act. | — |
-| **Oyuki** | Elderly ferrywoman. The first to believe Kage. Guide and quest-giver. | Whispering River / Meadow |
-| **Brann Ironvein** | Dwarf smith. Reforges Kage's sword with recovered ink. | The Forge |
-| **Lady Ilsabet** | Noble of Highmere. Sharp, rich, hiding that her family made a deal with the Blank. | Highmere (town) |
-| **Pip** | Beggar child in Mudgate. Can *see* the Blank coming. Kage's conscience. | Mudgate (outskirts) |
-| **Captain Hask** | Highmere guard captain. Rival, later ally. | Highmere |
-| **Snikkit** | Goblin shaman, coward, comic. Sells information for shiny things. | Goblin Warren |
-| **Grukhar** | Orc warchief. Honour-bound. A mirror of Kage: a warrior whose clan is being erased. | Orc Warband |
-| **Aelwen** | Elf mage. Keeper of the last unfaded grove. Knows what the Blank is. | Silverleaf Grove |
-| **The Unwritten** | The villain. A former apprentice of the Ink Sage who wants to erase the world and write it again, perfect and without suffering. | Appears through the Blank |
+| Character | Who they are |
+|---|---|
+| **Ren / Kage** | Player. Modern gamer inside the samurai's body. Sarcastic, uses gamer slang under his breath, treats people as NPCs at first. Grows into a real samurai. |
+| **Tsuki** | Kage's white horse. The first "NPC" to surprise Ren: she isn't in any guide, she just loves him. |
+| **Oyuki** | Old ferrywoman, the tutorial guide. Notices immediately that "Kage" walks wrong and talks strangely. |
+| **Pip** | Beggar child in Mudgate who can see the Blank coming. **Dies in every canon route.** Ren's first divergence and his reason to change. |
+| **Brann Ironvein** | Dwarf smith. Forges the Inkblade. Comic relief with depth. |
+| **Lady Ilsabet** | Highmere noble secretly trading the poor districts to the Blank. |
+| **Captain Hask** | Guard captain. A rival who becomes a friend, but only off canon. |
+| **Snikkit** | Goblin shaman, cowardly information broker. Somehow knows Ren isn't "from here". |
+| **Grukhar** | Orc warchief, honour-bound, losing his clan to the Blank. |
+| **Aelwen** | Elf mage, keeper of the last unfaded grove. Knows what the Blank really is. |
+| **The Unwritten** | The villain. Wants to erase the world and write it again, perfect. **Twist: he is another player.** |
 
-## Act I — The Forgotten Castle
+## Act I — Tutorial
 
-**1. Cold open: the Whispering River.** Night. Kage rides Tsuki along the river,
-returning home. Fireflies, moonlight on the current. He crests the hill and the castle
-is gone. Just a perfectly blank square of ground. Wind. Tsuki shies away.
+**1. Wake-up (the intro video).** Ren in his room at 3:33 a.m.; CONTINUE?; pulled into the
+game; wakes on the riverbank as Kage. Panics, laughs, tests the controls on his own body
+("Jump is… Space? Oh no, I'm the controller.").
 
-> **KAGE:** …Lord Sōma?
-> *(Silence. A single dot of ink drifts up from the blank ground and fades.)*
+**2. "I know this part."** He rides to the hill and recites the scene before it happens: the
+castle is gone. Oyuki at the ferry says her canon line word for word, and Ren mouths it along
+with her. She stops.
 
-**2. Oyuki.** At the river crossing an old ferrywoman is mending a net.
+> **OYUKI:** …You said that with me.
+> **REN:** Lucky guess.
+> **OYUKI:** You're not Kage. Kage never guessed anything in his life.
 
-> **OYUKI:** A castle? Child, there's never been a castle on that hill.
-> **KAGE:** I served in it for eleven years.
-> **OYUKI:** *(long look)* …Then you are the first person I've met who remembers something the Blank took. Sit. Drink. You'll need both.
+**3. The Crypt.** Boss: **the Nameless Knight**. Ren knows the attack pattern by heart, but his
+new body doesn't, and he gets crushed. First **Glimpse**: the ghost glyphs show the knight's
+swing. Lesson: knowing isn't the same as being able to do it. He trains, wins, and takes the
+first **Brushstroke**.
 
-*Teaches movement, riding, the camp. Tutorial fight: ink-wisps at the crypt.*
+**4. The Forge.** Brann reforges the sword: the **Inkblade**. Ren unlocks **Read** and sees
+the canon future: Pip dying in Mudgate in the snow, a cutscene he has watched a hundred times.
+For the first time, it hurts to watch.
 
-**3. The Crypt.** Oyuki sends Kage to the old crypt, where the dead are buried with
-their names written in ink. The Blank has been feeding there. Boss: **the Nameless
-Knight**, a suit of armour whose name was erased; it fights to remember who it was.
-Defeating it frees its name, and Kage gets the first **Brushstroke**.
+## Act II — Divergence (open order)
 
-**4. The Forge.** Brann the dwarf reforges Kage's sword with the Brushstroke.
+Ren plans to follow canon exactly, because canon is safe and he knows the way. Each region
+tests that plan.
 
-> **BRANN:** Ink in steel. My grandfather said it could be done. He also said I'd marry well. One out of two.
+- **Mudgate (outskirts):** Ren meets Pip in person: she's funny, she gives him half her bread,
+  she calls him "Mister Shadow". On the canon night of her death he breaks the script and
+  saves her. **First major divergence.** His visions flicker for the first time. Pip joins as a
+  companion; her Blank-sense partly replaces his fading foresight.
+- **Highmere (town):** Ren exposes Lady Ilsabet weeks before canon allows it. Captain Hask, a
+  canon enemy, becomes an ally. The town plays out in ways no guide covers.
+- **Goblin Warren:** Snikkit tells Ren a story about "another stranger who walked wrong and
+  knew things", years ago. The first hint that Ren isn't the first player.
+- **Orc Warband:** In canon, Kage kills Grukhar. Ren uses Walkthrough to find a way to win the
+  duel without killing him. Grukhar swears loyalty. Divergence spikes and the visions go to static.
 
-*New ability: **Inkblade**. Strikes restore faded ground, and corrupted enemies take extra damage.*
+**Mid-point twist:** at Silverleaf, Aelwen shows Ren the truth. The Blank isn't a monster. It
+is a **reset**. Someone is erasing the world so it can start over from the beginning, the way
+a player restarts a save.
 
-## Act II — The Divided Lands
+## Act III — The other player
 
-The middle of the game is open. Kage can take the four regions in any order. Each
-holds a Brushstroke and shows a different face of the Blank.
+**1. The Unwritten.** The villain reveals himself in Ren's own Foresight; his glyphs are
+gold, not white. His name was **Daichi Mori**, a game tester who fell into KAGE eleven years
+ago. He has replayed the story **thousands of times** looking for the perfect run, saving
+everyone. He never found it. Now he believes the only good ending is no world at all, so no
+one can die in it again.
 
-### Highmere (town): the rich forget on purpose
-Cobbled streets, lamplight, market stalls, nobles and guards. Highmere is untouched by
-the Blank. Too untouched. Lady Ilsabet's family has been paying the Unwritten: they give
-up the *poor* parts of the city, and in exchange their own are spared.
+> **THE UNWRITTEN:** You think you're the first to save the girl? I saved her four hundred times. She dies in the next route anyway. They always die. Erase it, Ren. Then nobody hurts.
+> **REN:** You stopped seeing them as people.
+> **THE UNWRITTEN:** I stopped seeing them as *new*.
 
-- **Quest — "The Missing Street":** a merchant swears there used to be a fishmongers'
-  row. Kage finds the erased street at the city's edge and follows the trail to Ilsabet.
-- **Choice:** expose Ilsabet to Captain Hask (she's arrested, and Highmere turns on its
-  nobles), or let her make it right in secret (she funds Mudgate's rebuilding, and the
-  guards stay suspicious of Kage).
-- **Rival duel:** Captain Hask challenges the "masterless dog" in the plaza. Win, and he
-  becomes an ally in Act III.
+**2. Blind.** Divergence is now total. Foresight shows nothing but static. For the first time
+Ren faces a future nobody has seen: no guide, no walkthrough. He must trust Pip's warnings,
+Hask's guards, Grukhar's orcs and Brann's steel.
 
-### Mudgate (outskirts): the poor are erased first
-Mud, hovels, campfires, beggars. The Blank eats here every night and no one in Highmere
-notices. Pip, a beggar child, can see the white edge of the Blank before it comes.
+**3. The Blank March.** A white tide rolls toward Highmere. Every ally Ren saved off canon
+shows up; in the original game none of them would be alive. Mounted battle on Tsuki.
 
-> **PIP:** It comes at night, quiet. Takes the old ones first. Then the ones nobody would miss.
-> **KAGE:** Somebody misses them.
-> **PIP:** …You do?
-> **KAGE:** I'm keeping a list.
-
-- **Quest — "Night Watch":** defend Mudgate through one night with the townsfolk,
-  holding lit campfires against a Blank tide (wave fight, light as a resource).
-- Pip joins as a companion who points out hidden erasures and secrets.
-
-### Goblin Warren: the cowards survive
-Ruined walls, tattered banners, scrap. The goblins aren't evil; they're hiding. The Blank
-can't find what keeps moving, so the whole warren is nomadic.
-
-> **SNIKKIT:** Shiny sword-man! Snikkit knows things. Snikkit knows *many* things. Snikkit wants… that button.
-> **KAGE:** It's holding my cape on.
-> **SNIKKIT:** Then Snikkit knows *fewer* things.
-
-- **Quest — "The Trade":** Snikkit leads Kage to the Brushstroke in exchange for
-  escorting the warren to a safer camp. Stealth and escort; Tsuki keeps trying to kick goblins.
-- Reveals that the Unwritten was once a student of the Ink Sage.
-
-### Orc Warband: honour against the void
-Campfires, war banners, ash ground. Warchief Grukhar's clan is being erased one warrior
-at a time, and an orc cannot fight what has no body. Grukhar is angry and grieving.
-
-> **GRUKHAR:** You also lost your lord.
-> **KAGE:** Yes.
-> **GRUKHAR:** Then we are both shadows. Fight me. If you win, I follow you. If I win, I go into the Blank and die like a warrior, not like a smudge.
-
-- **Duel:** honour fight. Spare Grukhar, and the warband joins the final battle.
-- The Brushstroke is Grukhar's father's blade, and he gives it freely.
-
-## Act III — Silverleaf and the Unwritten
-
-**1. Silverleaf Grove.** With four Brushstrokes, Kage finds the last place the Blank
-has never touched: a grove of glowing trees and lanterns where the elves keep the
-oldest ink. Aelwen explains the truth.
-
-> **AELWEN:** The Unwritten does not hate the world. He loved it. He saw every war, every famine, every child in Mudgate, and he believed he could write it again without the mistakes.
-> **KAGE:** By erasing everyone in it.
-> **AELWEN:** A blank page has no suffering. That is his argument. It is a very good argument, and it is wrong.
-
-**2. Memory of Lord Sōma.** Aelwen uses the grove's ink to let Kage walk through a
-memory of the castle. Sōma speaks to him one last time. It is not a ghost but a memory
-Kage kept alive.
-
-> **LORD SŌMA:** A samurai's duty is not to his lord, Kage. It is to what his lord protected. The river. The people. Even the ones who never knew our names.
-
-Kage stops being a ronin in his heart: he has found what he serves.
-
-**3. The Blank March.** The Unwritten makes his move: a white tide rolls across the map
-toward Highmere. Every ally Kage earned shows up (Hask's guards, Grukhar's orcs, the
-goblins if escorted, Brann, Pip). Large open-field battle on horseback with Tsuki.
-Choices made in Act II decide who stands with him.
-
-**4. The Unwritten.** Final duel on the blank hill where the castle stood. The arena
-erases itself as you fight; Kage must write ground back with each Inkblade strike to
-keep standing.
-
-> **THE UNWRITTEN:** Look at what you're defending. Mud. Greed. Grief. Let me give them peace.
-> **KAGE:** You'd give them nothing and call it peace.
-> **THE UNWRITTEN:** Nothing does not suffer.
-> **KAGE:** Nothing does not *live*.
+**4. Final duel.** On the blank hill where the castle stood. Two players with two foresights,
+each reading the other's future in a loop of ghost glyphs. Ren wins because he does the one
+thing the Unwritten can't predict: something *no route has ever done*. He drops his sword and
+spends **Rewind** to save the Unwritten from falling into the Blank.
 
 ## Endings
 
-- **Rewrite (main):** Kage uses all Brushstrokes to rewrite the castle and its people,
-  including Lord Sōma. The lands are restored, but the Unwritten is not destroyed; he is
-  given a name again and becomes mortal. Final shot: Kage and Tsuki on the hill at dawn,
-  castle behind him, choosing to ride on and not stay.
-- **Remember (alternate, if Pip and Grukhar's clan were saved):** Kage spends the final
-  Brushstroke on Mudgate and the orc clan instead of the castle. Sōma stays erased, but
-  everyone remembers him now. Kage remains a ronin, by choice.
-- **Blank (failure):** if Kage loses too many allies, the Unwritten wins and the screen
-  slowly erases to white, glyph by glyph. Kage's last line: *"I remember."*
+- **Log Out:** the loop breaks and a door opens home. Ren wakes at his desk at 3:34 a.m. The
+  game's title screen has changed: Pip and Tsuki stand on the hill. A new save file is named
+  "REN". He smiles and presses Continue, by choice this time.
+- **Stay:** Ren gives up the way home and stays as Kage. Daichi, mortal again, goes home in
+  his place. Final shot: Ren on Tsuki at dawn, a world with no walkthrough ahead of him.
+- **Reset (bad):** if Ren follows canon to stay safe, Pip and the others die exactly as
+  written, and the Unwritten persuades him the loop is the only way. The screen fades to
+  `CONTINUE? > YES`.
 
-## Gameplay hooks the story needs
+## Gameplay hooks
 
-- **Inkblade:** combat strikes restore faded ground and damage Blank-corrupted enemies.
-- **Erasure visuals:** the Blank shows as glyphs thinning from `#` to `+` to `.` to
-  empty white. This suits the ASCII shader well.
-- **Riding Tsuki:** fast travel, mounted combat in the Act III battle, and a horse
-  that reacts (shies at the Blank, kicks goblins).
-- **Night and light:** campfires and lanterns push back the Blank; ties into the
-  existing day/night cycle and lights.
-- **Choices with memory:** an ally roster and an "ink" meter decide the ending.
-- **Physics:** cape and hair cloth, wind in the grass, dust and sparks. Already built by Agent D.
+- **Foresight:** a button that flips the renderer into raw-glyph wireframe and draws future
+  enemy paths as ghost glyphs. It suits the ASCII shader perfectly (desaturate, show bare
+  glyphs, overlay ghost trails). Cooldown ring on the HUD.
+- **Divergence meter:** rises with off-canon choices; distorts Foresight with static and
+  wrong visions; unlocks off-canon allies and endings.
+- **Canon / off-canon quests:** the quest log shows "canon" outcomes struck through as Ren
+  changes them.
+- **Inkblade, Brushstrokes, the Blank:** as before (strikes restore faded ground; erasure
+  thins glyphs `#` → `+` → `.` → empty).
+- **Riding Tsuki, night and light, ally roster:** as before; allies saved off canon join the
+  Act III battle.
+- **Physics:** cape and topknot cloth, wind in the grass, dust and sparks (built by Agent D).
 
-## Kage's character sheet (for the 3D model)
+## Ren / Kage character sheet (3D model and video)
 
-- **Look:** lean samurai, mid-30s, topknot with loose strands (hair physics), a pale
-  grey-white travelling cape (cloth physics), dark lacquered armour with one red
-  cord, straw hat slung on his back, single katana.
-- **Silhouette rule:** at any zoom he must read as *hat-shape + cape + blade*. In
-  ASCII he should be the brightest figure on screen, as in the references.
-- **Moves:** walk, run, ride, jump, draw-and-cut (iaijutsu), parry, Inkblade finisher.
-- **Voice:** quiet, dry humour, never more than two sentences.
+- **In the game (Kage's body):** lean samurai, mid-30s, topknot with loose strands, pale
+  grey-white travelling cape, dark lacquered armour with one red cord, straw hat slung on his
+  back, single katana. Silhouette: hat + cape + blade at any zoom; brightest figure on screen.
+- **Real world (Ren):** 27, Japanese, messy black hair, tired eyes, oversized dark hoodie,
+  headphones round his neck. Small cluttered room lit only by a monitor; energy drink cans.
+- **Foresight look:** irises flash white; colour drains from the world into bare glyphs;
+  ghostly white glyph figures run ahead of the real ones.
+- **Voice:** dry, quick, sarcastic at first; quieter and fewer words as he grows.

@@ -81,6 +81,20 @@ shader lost the hand-made glyph art. Don't make 3D the default without the owner
 Mobile: touch controls (joystick / tap-to-move), quality levels, 30–60 FPS on mid phones.
 Story and hero (a samurai): `docs/STORY.md`.
 
+## Round 2 agent streams (art) — started 2026-11-24
+
+Owner runs opencode in parallel: `scripts\run-agents.ps1` now defaults to E, F, G, H.
+Briefs: `artifacts/agents/E-trees.md`, `F-wildlife.md`, `G-characters.md`, `H-world.md`
+(shared rules and what the owner rejected/liked: `artifacts/agents/README.md`, "Round 2").
+Registries `src/assets/trees/index.ts` (TREES) and `src/assets/animals/index.ts` (ANIMALS)
+are wired into `catalog.ts`. Claude's integration after review: wire `src/game/wildlife.ts`
+into `riverScene.ts`, add `tests/wildlife.test.mjs` to `npm test`, apply H's proposed spawn.
+
+Current 2D stack (since the 3D rejection): GPU drawing via `src/render/gpuPresenter.ts`
+(bloom, water reflections, snow cover, lightning), particle weather in
+`src/game/weather.ts` (T cycles, B burns nearest building), swaying grass strands in
+`src/render/terrainLayer.ts`.
+
 ## Rules the owner has set
 
 - Show results in the running game; no approval dashboards or per-asset review UIs.

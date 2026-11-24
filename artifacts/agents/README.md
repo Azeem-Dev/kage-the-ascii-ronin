@@ -1,19 +1,50 @@
 # KAGE agent work streams — shared rules
 
-Four agents work in parallel. Each owns a set of files and must not edit anything
+Agents work in parallel. Each owns a set of files and must not edit anything
 else. Claude reviews every change before it is merged into the game.
+
+## Round 2 (current) — art: environment, wildlife, characters, world
 
 | Brief | Owner | Files you may edit |
 | --- | --- | --- |
-| `A-people.md` | Agent A | `src/assets/people/**` only |
-| `B-buildings.md` | Agent B | `src/assets/buildings/**` only |
-| `C-world.md` | Agent C | `src/assets/landscape.ts`, `src/game/landmarks.ts`, `src/game/worldChunks.ts`, `src/game/colliders.ts`, `src/assets/flora.ts` |
-| `D-physics.md` | Agent D | `src/engine/**`, `tests/physics.test.mjs`, new `tests/*.test.mjs` |
+| `E-trees.md` | Agent E | `src/assets/trees/**`, `src/assets/pine.ts`, `src/assets/flora.ts` |
+| `F-wildlife.md` | Agent F | `src/assets/animals/**`, `src/assets/creatures.ts`, `src/game/wildlife.ts`, new `tests/wildlife.test.mjs`, `artifacts/agents/F-preview/**` |
+| `G-characters.md` | Agent G | `src/assets/people/**`, `src/assets/characters.ts`, `src/assets/horse.ts`, `src/assets/authored.ts` |
+| `H-world.md` | Agent H | `src/assets/landscape.ts`, `src/game/landmarks.ts`, `src/game/worldChunks.ts`, `src/game/colliders.ts` |
 
 Do **not** touch: `src/render/**`, `src/riverScene.ts`, `src/assets/catalog.ts`,
-`src/assets/types.ts`, `src/assets/shapes.ts`, tests (except Agent D), `package.json`,
-and `src/engine/**` (except Agent D).
-If you need a change there, write it in your hand-off note instead.
+`src/assets/types.ts`, `src/assets/shapes.ts`, `src/engine/**`, `src/three/**`,
+existing tests, `package.json`. New assets register through your folder's `index.ts`
+(already wired into the catalog). If you need a change elsewhere, write it in your
+hand-off note — Claude does it.
+
+**What the owner rejected (do not repeat):** a 3D-model look (Three.js meshes through an
+ASCII filter: "blurred", "stupid"); tiny facial details that turn to noise; fake animation
+by shearing rows/columns sideways (it doubled the horse's front leg); evenly spaced,
+synchronized particles ("too organized"); one repeated tree; "all forest".
+**What the owner liked:** the 2D hand-made glyph art, the knight, dark night scenes with a
+bright lit subject, water glints, the reference videos in `motivation/` (Ansenjeo).
+
+### How the picture is made now (round 2)
+
+- The game is 2D glyph art (`src/riverScene.ts`). Each frame the CPU decides every cell's
+  glyph and lit colours (`src/render/assetRenderer.ts`), then **Three.js draws it on the
+  GPU** (`src/render/gpuPresenter.ts`): crisp glyphs, bloom on bright cells (fire, lamps,
+  glints, white horse), water reflections, snow cover, lightning. `?gpu=0` = old CPU path.
+- Props get **volume shading** (dark at the base, lit toward the top) and cast shadows;
+  actors stay bright with a dark side/top halo. So author clean albedo and strong shapes.
+- Grass glyphs `| / \ !` in the terrain sway in the wind automatically.
+- Weather (`T`): clear, rain, storm, snow, firefall. `B` sets a building on fire.
+- Keys 1–0 jump between regions; `?area=<id>` in the URL; `?debug=water` tints water.
+
+## Round 1 (done, merged)
+
+| Brief | Owner | Files |
+| --- | --- | --- |
+| `A-people.md` | Agent A | `src/assets/people/**` |
+| `B-buildings.md` | Agent B | `src/assets/buildings/**` |
+| `C-world.md` | Agent C | world files |
+| `D-physics.md` | Agent D | `src/engine/**` |
 
 ## How the game works (read before writing art)
 
@@ -51,6 +82,12 @@ If you need a change there, write it in your hand-off note instead.
 | Orc | 50–56 | 140 cells → 0.38 |
 | Cottage | 90–110 | 180 cells → 0.55 |
 | Manor / tavern | 140–180 | 220 cells → 0.7 |
+| Tree (oak, willow) | 120–200 | 260–320 cells → 0.5–0.65 |
+| Pine / cypress | 140–220 | 300 cells → 0.6 |
+| Bush / reeds | 15–40 | 60–100 cells → 0.35 |
+| Cow / horse | 32–36 tall, 60–70 long | 100×190 cells → 0.35 |
+| Buffalo | ~40 tall, ~70 long | 110×200 cells → 0.36 |
+| Small bird | 4–8 | 24–40 cells → 0.2 |
 
 ## Definition of done (every stream)
 

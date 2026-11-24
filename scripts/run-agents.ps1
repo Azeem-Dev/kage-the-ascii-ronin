@@ -10,7 +10,8 @@
   Claude can follow progress and review.
 #>
 param(
-  [string[]]$Agents = @('A', 'B', 'C', 'D'),
+  # Round 2 (art). Round 1 letters A-D still work if passed explicitly.
+  [string[]]$Agents = @('E', 'F', 'G', 'H'),
   [string]$Model = ''
 )
 $ErrorActionPreference = 'Stop'
@@ -37,13 +38,16 @@ if (-not $Model) {
 $Model = "$Model".Trim()
 Write-Host "Model: $Model" -ForegroundColor Cyan
 
-$briefs = @{ A = 'A-people.md'; B = 'B-buildings.md'; C = 'C-world.md'; D = 'D-physics.md' }
+$briefs = @{
+  A = 'A-people.md'; B = 'B-buildings.md'; C = 'C-world.md'; D = 'D-physics.md'
+  E = 'E-trees.md'; F = 'F-wildlife.md'; G = 'G-characters.md'; H = 'H-world.md'
+}
 $logs = Join-Path $root 'artifacts\agents\logs'
 New-Item -ItemType Directory -Force -Path $logs | Out-Null
 
 foreach ($agent in $Agents) {
   $brief = $briefs[$agent.ToUpper()]
-  if (-not $brief) { Write-Host "Unknown agent $agent (use A, B, C, D)" -ForegroundColor Red; continue }
+  if (-not $brief) { Write-Host "Unknown agent $agent (use A-H)" -ForegroundColor Red; continue }
   $letter = $agent.ToUpper()
   $prompt = "You are Agent $letter on the KAGE project. Read artifacts/agents/README.md and artifacts/agents/$brief completely, then do that task end to end. " +
             "A previous agent may have started this task: review any existing work in your files, keep what is good and finish it. Edit only the files your brief allows. Run npm test and npx tsc --noEmit -p . until both pass. " +

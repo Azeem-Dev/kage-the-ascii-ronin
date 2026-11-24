@@ -12,7 +12,8 @@ import { AssetRenderer } from './render/assetRenderer.ts';
 import { AssetCache, type PlacedSprite } from './render/assetCache.ts';
 import { TerrainLayer } from './render/terrainLayer.ts';
 import { CONFIG } from './config.ts';
-import { moveBody } from './engine/physics.ts';
+import { moveBody, type Collider } from './engine/physics.ts';
+import { collidersFor } from './game/colliders.ts';
 import { Atmosphere } from './game/atmosphere.ts';
 import './riverScene.css';
 
@@ -56,6 +57,23 @@ export function startRiverScene(): void {
   const wakeIds = ['#8ea7aa', '#4b6973', '#a8beba', '#48646e'].map(color => ['o', '.', '-'].map(glyph => renderer.glyph(glyph, color)));
   let lastProps: ReturnType<WorldChunks['around']> | null = null;
   let instances: Instance[] = [];
+  // Derived from `instances` only when the chunk window changes, not every frame.
+  let colliders: Collider[] = [];
+  let lanterns: Instance[] = [];
+  let riverRocks: Instance[] = [];
+  const footstepIds = {
+    fresh: renderer.glyph('_', '#7a986f'),
+    right: renderer.glyph('/', '#3e6049'),
+    left: renderer.glyph('\\', '#3e6049'),
+    dust: renderer.glyph('.', '#a49b78'),
+  };
+  // Text/filter writes only when the value changes: avoids per-frame DOM and style invalidation.
+  const lastText = new Map<string, string>();
+  const setText = (node: Node | null | undefined, key: string, value: string) => {
+    if (!node || lastText.get(key) === value) return;
+    lastText.set(key, value); node.textContent = value;
+  };
+  let lastFilter = ''; let lastDiagnostics = -Infinity;
   function size(): void {
     // Coarser distant samples bound framebuffer work at the widest zoom.
     detailStep = Math.max(1, Math.ceil(.8 / zoom));
@@ -70,6 +88,71 @@ export function startRiverScene(): void {
   weatherPanel.className = 'world-weather';
   weatherPanel.innerHTML = '<button id="toggle-rain">Rain: off [T]</button><button id="toggle-day">Day / night [N]</button><button id="toggle-insects">Insects: on [L]</button><button id="toggle-cycle">Cycle: on [C]</button>';
   document.querySelector('.river-game')?.append(weatherPanel);
+
+  // --- Pause screen (UI-01): an ASCII modal; simulation stops while it is open. ---
+  const pauseScreen = document.createElement('div');
+  pauseScreen.className = 'world-pause';
+  pauseScreen.hidden = true;
+  pauseScreen.setAttribute('role', 'dialog');
+  pauseScreen.setAttribute('aria-label', 'Game paused');
+  pauseScreen.innerHTML = `<pre>╔════════════════════════════════════╗
+║                                    ║
+║        K   A   G   E               ║
+║        ~ the ascii ronin ~         ║
+║                                    ║
+║              PAUSED                ║
+║                                    ║
+╚════════════════════════════════════╝</pre><div class="world-pause-menu"><button id="pause-resume">▶ Resume <kbd>P / Esc</kbd></button><button id="pause-restart">↺ Restart <kbd>R</kbd></button><button id="pause-rain">☂ Rain <kbd>T</kbd></button><button id="pause-day">☀ Day / night <kbd>N</kbd></button></div>`;
+  document.querySelector('.river-game')?.append(pauseScreen);
+  const setPaused = (value: boolean) => {
+    paused = value; pauseScreen.hidden = !value;
+    if (value) { keys.clear(); target = null; (document.getElementById('pause-resume') as HTMLElement | null)?.focus(); }
+    // `last` is refreshed every frame, so resuming cannot produce a large time step.
+  };
+
+  // --- Minimap (UI-02): explored terrain, landmarks and the player. ---
+  const MAP_W = 144; const MAP_H = 100;
+  const MAP_SCALE = 2.5;       // world units per map pixel
+  const EXPLORE_CELL = 16;     // fog-of-war granularity in world units
+  const EXPLORE_RADIUS = 7;    // cells revealed around the player
+  const minimap = document.createElement('canvas');
+  minimap.className = 'world-minimap'; minimap.width = MAP_W; minimap.height = MAP_H;
+  minimap.setAttribute('aria-label', 'Minimap');
+  document.querySelector('.river-game')?.append(minimap);
+  const mapCtx = minimap.getContext('2d');
+  const mapImage = mapCtx?.createImageData(MAP_W, MAP_H);
+  const mapPixels = mapImage ? new Uint32Array(mapImage.data.buffer) : null;
+  const explored = new Set<number>();
+  const exploreKey = (cx: number, cy: number) => (cx + 4096) * 8192 + (cy + 4096);
+  let exploreCx = NaN; let exploreCy = NaN; let lastMapDraw = -Infinity;
+  function drawMinimap(now: number): void {
+    const cx = Math.floor(hero.x / EXPLORE_CELL); const cy = Math.floor(hero.y / EXPLORE_CELL);
+    if (cx !== exploreCx || cy !== exploreCy) {
+      exploreCx = cx; exploreCy = cy;
+      for (let dy = -EXPLORE_RADIUS; dy <= EXPLORE_RADIUS; dy++) for (let dx = -EXPLORE_RADIUS; dx <= EXPLORE_RADIUS; dx++) {
+        if (dx * dx + dy * dy <= EXPLORE_RADIUS * EXPLORE_RADIUS) explored.add(exploreKey(cx + dx, cy + dy));
+      }
+    }
+    if (!mapCtx || !mapImage || !mapPixels || now - lastMapDraw < 250) return; // ~4 Hz is plenty
+    lastMapDraw = now;
+    for (let y = 0; y < MAP_H; y++) for (let x = 0; x < MAP_W; x++) {
+      const wx = hero.x + (x - MAP_W / 2) * MAP_SCALE; const wy = hero.y + (y - MAP_H / 2) * MAP_SCALE;
+      // ABGR pixels: unexplored / water / land.
+      mapPixels[y * MAP_W + x] = !explored.has(exploreKey(Math.floor(wx / EXPLORE_CELL), Math.floor(wy / EXPLORE_CELL))) ? 0xff120f0b
+        : waterDepth(wx, wy) > 0 ? 0xff9a7f3f : 0xff2f4026;
+    }
+    mapCtx.putImageData(mapImage, 0, 0);
+    mapCtx.font = '8px "Courier New", monospace'; mapCtx.textAlign = 'center';
+    for (const area of LANDMARKS) {
+      const mx = MAP_W / 2 + (area.x - hero.x) / MAP_SCALE; const my = MAP_H / 2 + (area.y - hero.y) / MAP_SCALE;
+      if (mx < 4 || my < 8 || mx > MAP_W - 4 || my > MAP_H - 2) continue;
+      mapCtx.fillStyle = '#e8c46a'; mapCtx.fillText(area.key.replace('Digit', ''), mx, my + 3);
+    }
+    mapCtx.fillStyle = '#ffffff';
+    mapCtx.fillRect(MAP_W / 2 - 1, MAP_H / 2 - 1, 3, 3);
+    mapCtx.fillStyle = '#ff6a4a';
+    mapCtx.fillRect(MAP_W / 2 + (hero.facing === 'right' ? 2 : -3), MAP_H / 2, 1, 1);
+  }
   const toggleWeather = (code: string) => {
     if (code === 'KeyT') atmosphere.rain = (atmosphere.rain + 1) % 3;
     if (code === 'KeyL') atmosphere.insects = !atmosphere.insects;
@@ -91,7 +174,7 @@ export function startRiverScene(): void {
     toggleWeather(event.code);
     const destination = LANDMARKS.find(area => area.key === event.code);
     if (destination) { hero.x = destination.spawnX; hero.y = destination.spawnY; hero.vx = 0; hero.vy = 0; horse.x = hero.x + 27; horse.y = hero.y + 16; target = null; mounted = false; }
-    if (event.code === 'KeyP') paused = !paused;
+    if (event.code === 'KeyP' || event.code === 'Escape') setPaused(!paused);
     if (event.code === 'KeyV') hero.variant = (hero.variant + 1) % playable[playerIndex].variants.length;
     if (event.code === 'KeyH') { playerIndex = (playerIndex + 1) % playable.length; hero.variant = 0; }
     if (event.code === 'KeyE' && !paused) {
@@ -106,7 +189,12 @@ export function startRiverScene(): void {
   addEventListener('keyup', event => keys.delete(event.code));
   addEventListener('blur', () => { keys.clear(); target = null; });
   canvas.addEventListener('wheel', event => { event.preventDefault(); zoom = Math.max(CONFIG.exploration.minimumZoom, Math.min(CONFIG.exploration.maximumZoom, zoom * Math.exp(-event.deltaY * CONFIG.exploration.zoomSensitivity))); size(); }, { passive: false });
+  document.getElementById('pause-resume')!.onclick = () => setPaused(false);
+  document.getElementById('pause-restart')!.onclick = () => { setPaused(false); window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyR' })); };
+  document.getElementById('pause-rain')!.onclick = () => toggleWeather('KeyT');
+  document.getElementById('pause-day')!.onclick = () => toggleWeather('KeyN');
   canvas.addEventListener('pointerdown', event => {
+    if (paused) return;
     target = { x: cameraX + event.clientX / innerWidth * cols * detailStep, y: cameraY + event.clientY / innerHeight * rows * detailStep };
   });
 
@@ -133,6 +221,9 @@ export function startRiverScene(): void {
         if (!asset) throw new Error(`Unknown world asset ${prop.assetId}`);
         return { ...prop, asset };
       });
+      colliders = instances.flatMap(collidersFor);
+      lanterns = instances.filter(instance => instance.asset.id === 'lantern');
+      riverRocks = instances.filter(instance => instance.asset === ROCK && waterDepth(instance.x, instance.y) > 0);
     }
     const dt = Math.min(.05, (now - last) / 1000); last = now;
     if (!paused) {
@@ -150,7 +241,6 @@ export function startRiverScene(): void {
       const running = keys.has('ShiftLeft') || keys.has('ShiftRight');
       const speed = (mounted ? running ? CONFIG.exploration.gallopSpeed : CONFIG.exploration.rideSpeed : running ? CONFIG.exploration.runSpeed : CONFIG.exploration.walkSpeed) * (waterDepth(hero.x, hero.y) > 0 ? .55 : 1);
       const oldX = hero.x; const oldY = hero.y;
-      const colliders = instances.filter(instance => instance.asset === PINE || instance.asset === ROCK || instance.asset.category === 'Prop').map(instance => ({ x: instance.x, y: instance.y, radius: instance.asset === PINE ? 3 : instance.asset.category === 'Prop' ? instance.asset.width * instance.scale * .12 : 6 }));
       moveBody(hero, mx, my, speed, dt, colliders, mounted ? 4 : 2);
       hero.moving = Math.hypot(hero.x - oldX, hero.y - oldY) > .01;
       if (length && mx) hero.facing = mx > 0 ? 'right' : 'left';
@@ -176,13 +266,11 @@ export function startRiverScene(): void {
     for (const step of footsteps) {
       if (waterDepth(step.x, step.y) > 0) continue;
       const age = time - step.born;
-      for (let i = -4; i <= 4; i++) {
-        plot(ids, step.x + i, step.y + Math.abs(i) * .3, renderer.glyph(age < .65 ? '_' : step.direction > 0 ? '/' : '\\', age < .65 ? '#7a986f' : '#3e6049'));
-      }
-      if (age < .4) plot(ids, step.x - step.direction * age * 4, step.y - age * 4, renderer.glyph('.', '#a49b78'));
+      const stepId = age < .65 ? footstepIds.fresh : step.direction > 0 ? footstepIds.right : footstepIds.left;
+      for (let i = -4; i <= 4; i++) plot(ids, step.x + i, step.y + Math.abs(i) * .3, stepId);
+      if (age < .4) plot(ids, step.x - step.direction * age * 4, step.y - age * 4, footstepIds.dust);
     }
-    for (const instance of instances) {
-      if (instance.asset !== ROCK || waterDepth(instance.x, instance.y) <= 0) continue;
+    for (const instance of riverRocks) {
       for (let i = 0; i < 18; i++) {
         const age = (time * 5 + i * 1.7) % 30;
         plot(ids, instance.x + Math.sin(i * 2.8 + age * .07) * (4 + age * .2), instance.y + age * .8, wakeIds[age > 20 ? 1 : 0][i % 3 ? 0 : 1]);
@@ -225,7 +313,7 @@ export function startRiverScene(): void {
     draws.sort((a, b) => a.y - b.y).forEach(item => item.draw());
     const daytime = atmosphere.brightness > 1.1;
     renderer.illuminate(ids, cols, rows, (hero.x - (daytime ? 45 : 30) - cameraX) / detailStep, (hero.y - 35 - cameraY) / detailStep, (daytime ? 75 : 60) / detailStep, daytime);
-    for (const lamp of instances.filter(instance => instance.asset.id === 'lantern')) renderer.illuminate(ids, cols, rows, (lamp.x - cameraX) / detailStep, (lamp.y - 6 - cameraY) / detailStep, 23 / detailStep, true);
+    for (const lamp of lanterns) renderer.illuminate(ids, cols, rows, (lamp.x - cameraX) / detailStep, (lamp.y - 6 - cameraY) / detailStep, 23 / detailStep, true);
     const generationEnd = performance.now();
     atmosphere.render(ids, cols, rows, cameraX, cameraY, detailStep, time);
     const canScroll = lastCols === cols && lastRows === rows && lastDetailStep === detailStep && Number.isFinite(lastCameraX);
@@ -234,7 +322,8 @@ export function startRiverScene(): void {
     renderer.present(ctx, ids, cols, rows, scrollX, scrollY);
     lastCameraX = cameraX; lastCameraY = cameraY;
     lastCols = cols; lastRows = rows; lastDetailStep = detailStep;
-    canvas.style.filter = `brightness(${atmosphere.brightness.toFixed(2)}) saturate(1.18)`;
+    const filter = `brightness(${atmosphere.brightness.toFixed(2)}) saturate(1.18)`;
+    if (filter !== lastFilter) { lastFilter = filter; canvas.style.filter = filter; }
     canvas.dataset.generateMs = (generationEnd - renderStart).toFixed(1);
     canvas.dataset.terrainMs = (terrainEnd - renderStart).toFixed(1);
     canvas.dataset.blitMs = (performance.now() - generationEnd).toFixed(1);
@@ -242,21 +331,25 @@ export function startRiverScene(): void {
     frames++;
     if (now - fpsTime > 750) {
       fps = Math.round(frames * 1000 / (now - fpsTime)); frames = 0; fpsTime = now;
-      const stats = document.getElementById('world-stats'); if (stats) stats.textContent = `${world.loadedCount} CHUNKS / ${cols}×${rows} / ${fps} FPS`;
+      setText(document.getElementById('world-stats'), 'stats', `${world.loadedCount} CHUNKS / ${cols}×${rows} / ${fps} FPS`);
     }
-    const location = document.getElementById('world-location'); if (location) location.textContent = waterDepth(hero.x, hero.y) > 0 ? 'WADING · RIVER CURRENT' : 'RIVERBANK · WIND MEADOW';
-    const state = document.getElementById('world-state'); if (state) state.textContent = `${paused ? 'PAUSED' : playable[playerIndex].name.toUpperCase()} · ${playable[playerIndex].variants[hero.variant].toUpperCase()}`;
-    const region = document.querySelector('.world-region'); if (region?.firstChild) region.firstChild.textContent = regionAt(hero.x, hero.y).toUpperCase();
-    // Read-only diagnostics used by browser smoke tests and future tooling.
-    canvas.dataset.playerX = hero.x.toFixed(2); canvas.dataset.playerY = hero.y.toFixed(2); canvas.dataset.time = time.toFixed(2);
-    canvas.dataset.loadedChunks = String(world.loadedCount);
-    canvas.dataset.zoom = zoom.toFixed(2);
-    canvas.dataset.mounted = String(mounted);
-    canvas.dataset.rain = String(atmosphere.rain);
-    canvas.dataset.footsteps = String(footsteps.length);
-    canvas.dataset.actorMoving = String(hero.moving);
-    canvas.dataset.playerAsset = playable[playerIndex].id;
-    canvas.dataset.visibleTrees = String(visibleTrees);
+    setText(document.getElementById('world-location'), 'location', waterDepth(hero.x, hero.y) > 0 ? 'WADING · RIVER CURRENT' : 'RIVERBANK · WIND MEADOW');
+    setText(document.getElementById('world-state'), 'state', `${paused ? 'PAUSED' : playable[playerIndex].name.toUpperCase()} · ${playable[playerIndex].variants[hero.variant].toUpperCase()}`);
+    setText(document.querySelector('.world-region')?.firstChild, 'region', regionAt(hero.x, hero.y).toUpperCase());
+    // Read-only diagnostics for browser smoke tests; ~20 Hz avoids per-frame attribute churn.
+    if (now - lastDiagnostics > 50) {
+      lastDiagnostics = now;
+      canvas.dataset.playerX = hero.x.toFixed(2); canvas.dataset.playerY = hero.y.toFixed(2); canvas.dataset.time = time.toFixed(2);
+      canvas.dataset.loadedChunks = String(world.loadedCount);
+      canvas.dataset.zoom = zoom.toFixed(2);
+      canvas.dataset.mounted = String(mounted);
+      canvas.dataset.rain = String(atmosphere.rain);
+      canvas.dataset.footsteps = String(footsteps.length);
+      canvas.dataset.actorMoving = String(hero.moving);
+      canvas.dataset.playerAsset = playable[playerIndex].id;
+      canvas.dataset.visibleTrees = String(visibleTrees);
+    }
+    drawMinimap(now);
     requestAnimationFrame(tick);
   }
   requestAnimationFrame(tick);

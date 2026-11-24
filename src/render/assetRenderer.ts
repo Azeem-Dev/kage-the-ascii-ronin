@@ -1,5 +1,9 @@
 ﻿import type { AsciiCell } from '../assets/types.ts';
 
+/** Background of an empty cell: CSS form for 2D text, ABGR form for pixel buffers. */
+const BACKGROUND_CSS = '#070b10';
+const BACKGROUND_PIXEL = 0xff100b07;
+
 export interface GlyphSprite {
   width: number;
   height: number;
@@ -13,8 +17,9 @@ export interface GlyphSprite {
 export class AssetRenderer {
   private lookup = new Map<string, Map<string, number>>();
   private tiles: Uint32Array[] = [];
-  private definitions: { glyph: string; color: string }[] = [{ glyph: ' ', color: '#070b10' }];
-  private lit = new Map<string, number>();
+  private definitions: { glyph: string; color: string }[] = [{ glyph: ' ', color: BACKGROUND_CSS }];
+  /** (glyph id, warm, band) -> lit glyph id. Numeric keys: no per-cell string allocation. */
+  private lit = new Map<number, number>();
   private previous = new Uint32Array(0);
   private previousCols = 0;
   private previousRows = 0;
@@ -24,13 +29,13 @@ export class AssetRenderer {
   private output: ImageData | null = null;
   private outputPixels = new Uint32Array(0);
   private dirtyTiles = new Uint8Array(0);
+  private scrollCanvas: HTMLCanvasElement | null = null;
   private rasterCanvas: HTMLCanvasElement | null = null;
   private rasterContext: CanvasRenderingContext2D | null = null;
-  private scrollCanvas: HTMLCanvasElement | null = null;
   changedCells = 0;
   constructor(public cellWidth = 4, public cellHeight = 6) {
     const empty = new Uint32Array(cellWidth * cellHeight);
-    empty.fill(0xff100b07);
+    empty.fill(BACKGROUND_PIXEL);
     this.tiles.push(empty);
   }
 
@@ -53,7 +58,7 @@ export class AssetRenderer {
     if (tile.height !== this.cellHeight) tile.height = this.cellHeight;
     const ctx = this.rasterContext;
     if (!ctx) throw new Error('Cannot cache glyph');
-    ctx.fillStyle = '#070b10'; ctx.fillRect(0, 0, tile.width, tile.height);
+    ctx.fillStyle = BACKGROUND_CSS; ctx.fillRect(0, 0, tile.width, tile.height);
     ctx.font = `${this.cellHeight}px "Courier New", monospace`; ctx.textAlign = 'center';
     ctx.fillStyle = color; ctx.fillText(glyph, this.cellWidth / 2, this.cellHeight * .82);
     const pixels = new Uint32Array(ctx.getImageData(0, 0, tile.width, tile.height).data.buffer);
@@ -106,6 +111,7 @@ export class AssetRenderer {
 
   /** Local light changes existing glyph colors, never draws a raw pixel glow. */
   illuminate(ids: Uint32Array, cols: number, rows: number, x: number, y: number, radius: number, warm: boolean): void {
+    const warmBit = warm ? 1 : 0;
     const minX = Math.max(0, Math.floor(x - radius)); const maxX = Math.min(cols - 1, Math.ceil(x + radius));
     const minY = Math.max(0, Math.floor(y - radius * .7)); const maxY = Math.min(rows - 1, Math.ceil(y + radius * .7));
     for (let py = minY; py <= maxY; py++) for (let px = minX; px <= maxX; px++) {
@@ -113,7 +119,7 @@ export class AssetRenderer {
       const band = Math.floor((1 - dist) * 4);
       const original = ids[py * cols + px];
       if (!original || band < 1) continue;
-      const key = `${original}:${warm}:${band}`;
+      const key = (original * 2 + warmBit) * 8 + band;
       let id = this.lit.get(key);
       if (id === undefined) {
         const def = this.definitions[original];
@@ -181,7 +187,7 @@ export class AssetRenderer {
     ctx.globalCompositeOperation = 'source-over';
     ctx.globalAlpha = 1;
     ctx.imageSmoothingEnabled = false;
-    ctx.fillStyle = '#070b10';
+    ctx.fillStyle = BACKGROUND_CSS;
     ctx.fillRect(0, 0, width, height);
     ctx.drawImage(this.scrollCanvas, dx, dy);
     ctx.restore();
@@ -221,7 +227,7 @@ export class AssetRenderer {
           height,
           scrollX * this.cellWidth,
           scrollY * this.cellHeight,
-          0xff100b07
+          BACKGROUND_PIXEL
         );
         this.scrollDisplayedCanvas(
           ctx,
@@ -233,7 +239,7 @@ export class AssetRenderer {
       } else {
         fullRedraw = true;
         this.previous.fill(0xffffffff);
-        this.outputPixels.fill(0xff100b07);
+        this.outputPixels.fill(BACKGROUND_PIXEL);
       }
     }
     this.dirtyTiles.fill(fullRedraw ? 1 : 0);

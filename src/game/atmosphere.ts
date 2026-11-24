@@ -7,15 +7,29 @@ export class Atmosphere {
   insects = true;
   daylight = .15;
   cycle = true;
-  constructor(private renderer: AssetRenderer) {}
+  // Glyph ids resolved once; the per-frame loops below must not do string lookups.
+  private readonly ids: {
+    crest: number; crestAlt: number; mid: number; tail: number;
+    rain: number; rainTrail: number; fly: [number, number]; flyDim: [number, number];
+  };
+  constructor(renderer: AssetRenderer) {
+    this.ids = {
+      crest: renderer.glyph('o', '#b6d1d0'), crestAlt: renderer.glyph('°', '#b6d1d0'),
+      mid: renderer.glyph(':', '#6f9fa9'), tail: renderer.glyph('.', '#344f63'),
+      rain: renderer.glyph('/', '#65889b'), rainTrail: renderer.glyph('/', '#3e5d74'),
+      fly: [renderer.glyph('*', '#b2bb78'), renderer.glyph('*', '#cebd8a')],
+      flyDim: [renderer.glyph('.', '#b2bb78'), renderer.glyph('.', '#cebd8a')],
+    };
+  }
 
   update(dt: number): void { if (this.cycle) this.daylight = (this.daylight + dt / 300) % 1; }
   get brightness(): number { return .86 + (Math.sin(this.daylight * Math.PI * 2) * .5 + .5) * .6; }
 
   render(ids: Uint32Array, cols: number, rows: number, cameraX: number, cameraY: number, step: number, time: number): void {
-    const put = (x: number, y: number, glyph: string, color: string) => {
+    const g = this.ids;
+    const put = (x: number, y: number, id: number) => {
       x = Math.round(x); y = Math.round(y);
-      if (x >= 0 && y >= 0 && x < cols && y < rows) ids[y * cols + x] = this.renderer.glyph(glyph, color);
+      if (x >= 0 && y >= 0 && x < cols && y < rows) ids[y * cols + x] = id;
     };
     // Analytic downstream advection. Trails travel with the river's changing
     // centerline instead of swapping symbols in stationary screen locations.
@@ -28,19 +42,19 @@ export class Atmosphere {
       for (let tail = 0; tail < 5; tail++) {
         const py = y - tail * 1.4;
         const px = riverCenter(py) + lane * riverWidth(py) + Math.sin(py * .11 + i) * 1.2;
-        put((px - cameraX) / step, (py - cameraY) / step, tail === 0 ? (i % 3 ? 'o' : '°') : tail < 3 ? ':' : '.', tail === 0 ? '#b6d1d0' : tail < 3 ? '#6f9fa9' : '#344f63');
+        put((px - cameraX) / step, (py - cameraY) / step, tail === 0 ? (i % 3 ? g.crest : g.crestAlt) : tail < 3 ? g.mid : g.tail);
       }
     }
     for (let i = 0; i < (this.rain === 2 ? 230 : this.rain === 1 ? 75 : 0); i++) {
       const x = (i * 73 + Math.floor(time * 10)) % cols;
       const y = (i * 47 + Math.floor(time * 45)) % rows;
-      put(x, y, '/', '#65889b');
-      if (this.rain === 2) put(x - 1, y + 1, '/', '#3e5d74');
+      put(x, y, g.rain);
+      if (this.rain === 2) put(x - 1, y + 1, g.rainTrail);
     }
     if (this.insects) for (let i = 0; i < 16; i++) {
       const x = cols * (.15 + noise(i, 5, 72) * .7) + Math.sin(time * .6 + i) * 5;
       const y = rows * (.15 + noise(i, 7, 72) * .7) + Math.cos(time * .7 + i) * 3;
-      put(x, y, Math.sin(time * 2 + i) > .2 ? '*' : '.', i % 3 ? '#b2bb78' : '#cebd8a');
+      put(x, y, (Math.sin(time * 2 + i) > .2 ? g.fly : g.flyDim)[i % 3 ? 0 : 1]);
     }
   }
 }

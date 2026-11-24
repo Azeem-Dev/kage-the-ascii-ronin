@@ -220,6 +220,9 @@ function bootstrap(): void {
 }
 
 window.addEventListener('DOMContentLoaded', () => {
-  if (new URLSearchParams(window.location.search).get('mode') === 'game') bootstrap();
+  const mode = new URLSearchParams(window.location.search).get('mode');
+  if (mode === 'game') bootstrap();
+  // Three.js is loaded only for the 3D prototype, so the 2D game stays light.
+  else if (mode === '3d') void import('./three/game3d.ts').then(m => m.start3d());
   else startRiverScene();
 });

@@ -316,13 +316,17 @@ export class AssetRenderer {
       if (layer === LAYER.ground || layer === LAYER.effect) {
         let s = shadow[i] * (1 / 255);
         // Ambient occlusion where the ground meets an object standing above it.
-        if (y > 0 && height[i - cols]) s = Math.max(s, .75);
-        else if (y > 1 && height[i - 2 * cols]) s = Math.max(s, .45);
+        // A soft 4-cell falloff reads as contact, a 1-cell band reads as an outline.
+        if (y > 0 && height[i - cols]) s = Math.max(s, .78);
+        else if (y > 1 && height[i - 2 * cols]) s = Math.max(s, .55);
+        else if (y > 2 && height[i - 3 * cols]) s = Math.max(s, .32);
+        else if (y > 3 && height[i - 4 * cols]) s = Math.max(s, .15);
         sun *= 1 - s; const a = 1 - .55 * s; lr *= a; lg *= a; lb *= a;
       } else {
         // Volume: base in shadow, top catches the sky; lit side vs far side.
         const h = height[i];
-        const up = h < 18 ? h / 18 : 1;
+        // Gradient over the full storey height so tall facades darken toward the street.
+        const up = h < 36 ? h / 36 : 1;
         // Actors stay fully lit so they read as the subject, like the references.
         let e = layer === LAYER.actor ? .15 : up * .5 - .35;
         const lx = x + litSide; const fx = x - litSide;
@@ -331,7 +335,11 @@ export class AssetRenderer {
         if (lx >= 0 && lx < cols) { const l = layers[i + litSide]; if (l !== LAYER.prop && l !== LAYER.actor) e += .4; }
         if (fx >= 0 && fx < cols) { const l = layers[i - litSide]; if (l !== LAYER.prop && l !== LAYER.actor) e -= .5; }
         sun *= Math.max(0, 1 + e);
-        const a = Math.max(.25, 1 + e * .35); lr *= a; lg *= a; lb *= a;
+        // Objects standing in another object's cast shadow lose direct light too,
+        // so walking under a house's shade visibly dims the figure.
+        const cast = shadow[i] * (1 / 255) * (layer === LAYER.actor ? .7 : .5);
+        sun *= 1 - cast;
+        const a = Math.max(.25, 1 + e * .35) * (1 - cast * .4); lr *= a; lg *= a; lb *= a;
       }
       if (layer !== LAYER.actor) { lr *= depth; lg *= depth; lb *= depth; }
       lr += sun * sr; lg += sun * sg; lb += sun * sb;
@@ -356,8 +364,11 @@ export class AssetRenderer {
         }
         if (layer === LAYER.effect) { fr = Math.max(fr, def.r * .95); fgc = Math.max(fgc, def.g * .95); fb = Math.max(fb, def.b * .95); }
         if (layer === LAYER.actor) {
-          fr = fr * 1.4 + .06; fgc = fgc * 1.4 + .06; fb = fb * 1.4 + .06;
-          if (outline[i] === 2) { fr += .18; fgc += .17; fb += .14; }
+          // Mild lift plus extra saturation: the old ×1.4 + rim + bloom burned
+          // every costume to white, so NPCs read as ghosts.
+          const al = .299 * fr + .587 * fgc + .114 * fb;
+          fr = (al + (fr - al) * 1.35) * 1.12 + .02; fgc = (al + (fgc - al) * 1.35) * 1.12 + .02; fb = (al + (fb - al) * 1.35) * 1.12 + .02;
+          if (outline[i] === 2) { fr += .07; fgc += .065; fb += .055; }
         }
       }
       let br = bgDef.r * lr * bgFactor; let bgg = bgDef.g * lg * bgFactor; let bb = bgDef.b * lb * bgFactor;

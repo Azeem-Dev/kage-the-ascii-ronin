@@ -1,10 +1,10 @@
-{
+﻿{
   "name": "ascii-samurai-game",
   "version": "0.1.0",
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node tests/assets.test.mjs && node tests/physics.test.mjs",
+    "test": "node tests/assets.test.mjs && node tests/physics.test.mjs && node tests/wildlife.test.mjs",
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview"

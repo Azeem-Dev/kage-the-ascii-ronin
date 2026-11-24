@@ -4,7 +4,7 @@ import { ROCK } from './assets/rock.ts';
 import { HORSE } from './assets/horse.ts';
 import { ASSET_BY_ID } from './assets/catalog.ts';
 import { CHARACTERS } from './assets/characters.ts';
-import { riverCenter, waterDepth } from './assets/landscape.ts';
+import { waterDepth } from './assets/landscape.ts';
 import { noise, type AsciiAsset } from './assets/types.ts';
 import { WorldChunks } from './game/worldChunks.ts';
 import { LANDMARKS, regionAt } from './game/landmarks.ts';
@@ -17,6 +17,8 @@ import { moveBody, type Collider } from './engine/physics.ts';
 import { collidersFor } from './game/colliders.ts';
 import { Atmosphere } from './game/atmosphere.ts';
 import { Weather, type Fire } from './game/weather.ts';
+import { MOVERS, moverAt } from './game/townLife.ts';
+import { Wildlife } from './game/wildlife.ts';
 import './riverScene.css';
 
 interface Instance { id: string; asset: AsciiAsset; x: number; y: number; seed: number; scale: number; variant: number }
@@ -45,6 +47,7 @@ export function startRiverScene(): void {
   }
   const atmosphere = new Atmosphere(renderer);
   const weather = new Weather(renderer);
+  const wildlife = new Wildlife(1337);
   const BURNABLE = new Set(['hovel', 'cottage', 'townhouse', 'manor', 'tavern', 'tent', 'market-stall', 'haystack', 'cart']);
   /** Fire footprint from the building's drawn size (2D sprite heights include the roof). */
   const fireFor = (i: { id: string; x: number; y: number; scale: number; asset: AsciiAsset }): Fire =>
@@ -52,7 +55,7 @@ export function startRiverScene(): void {
   let mudgateLit = false;  const keys = new Set<string>();
   const playable = [RONIN, ...CHARACTERS];
   let playerIndex = 0;
-  const hero = { x: riverCenter(230) + 69, y: 230, vx: 0, vy: 0, facing: 'right' as 'left' | 'right', moving: false, variant: 0 };
+  const hero = { x: 770, y: -22, vx: 0, vy: 0, facing: 'right' as 'left' | 'right', moving: false, variant: 0 };
   const horse = { x: hero.x + 27, y: hero.y + 16, facing: 'right' as 'left' | 'right' };
   let mounted = false;
   let zoom = CONFIG.exploration.defaultZoom;
@@ -206,7 +209,7 @@ export function startRiverScene(): void {
       if (mounted) { mounted = false; hero.x = horse.x; hero.y = horse.y + 10; }
       else if (Math.hypot(hero.x - horse.x, hero.y - horse.y) < 36) { mounted = true; hero.x = horse.x; hero.y = horse.y; target = null; }
     }
-    if (event.code === 'KeyR') { hero.x = riverCenter(230) + 69; hero.y = 230; hero.vx = 0; hero.vy = 0; horse.x = hero.x + 27; horse.y = hero.y + 16; mounted = false; target = null; zoom = CONFIG.exploration.defaultZoom; size(); }
+    if (event.code === 'KeyR') { hero.x = 770; hero.y = -22; hero.vx = 0; hero.vy = 0; horse.x = hero.x + 27; horse.y = hero.y + 16; mounted = false; target = null; zoom = CONFIG.exploration.defaultZoom; size(); }
     if (['Minus', 'NumpadSubtract', 'Equal', 'NumpadAdd'].includes(event.code)) {
       zoom = Math.max(CONFIG.exploration.minimumZoom, Math.min(CONFIG.exploration.maximumZoom, zoom * (event.code === 'Minus' || event.code === 'NumpadSubtract' ? .8 : 1.25))); size();
     }
@@ -366,8 +369,48 @@ export function startRiverScene(): void {
     draws.push({ y: horse.y, draw: () => {
       shadow(ids, horse.x, horse.y, 24, 3);
       place(ids, assetCache.get(HORSE, { ...actorOptions, seed: 31, variant: 0, action: mounted && hero.moving ? 'walk' : 'idle', facing: horse.facing }, .48 / detailStep, true), horse.x, horse.y, LAYER.actor); // always an actor: prop base-darkening made its legs vanish (looked like floating)
-      if (mounted) place(ids, assetCache.get(playable[playerIndex], { ...actorOptions, action: 'sit' as const }, 34 / playable[playerIndex].height / detailStep, true), hero.x - (hero.facing === 'right' ? 2 : -2), hero.y - 22 + (hero.moving ? Math.abs(Math.sin(time * 6)) * .6 : 0), LAYER.actor, false);
+      if (mounted) place(ids, assetCache.get(playable[playerIndex], { ...actorOptions, action: 'sit' as const }, (playable[playerIndex].id.startsWith('dwarf') ? 30 : 41) / playable[playerIndex].height / detailStep, true), hero.x - (hero.facing === 'right' ? 2 : -2), hero.y - 15 + (hero.moving ? Math.abs(Math.sin(time * 6)) * .6 : 0), LAYER.actor, false);
     } });
+    // Townsfolk and carts walking the streets (positions are a pure function of time).
+    const viewRight = cameraX + cols * detailStep; const viewBottom = cameraY + rows * detailStep;
+    // Wildlife (Agent F): herds, birds, butterflies, fireflies around the camera.
+    wildlife.update(paused ? 0 : dt, cameraX, cameraY, cols * detailStep, rows * detailStep, hero, dayFactor() < .35);
+    for (const animal of wildlife.animals) {
+      const asset = ASSET_BY_ID.get(animal.assetId);
+      if (!asset) continue;
+      const airborne = animal.z > 0;
+      draws.push({ y: animal.y - animal.z, draw: () => {
+        if (!airborne) shadow(ids, animal.x, animal.y, 8 * animal.scale / .3, 2);
+        place(ids, assetCache.get(asset, { time: time + animal.seed % 5, seed: animal.seed, variant: animal.variant, facing: animal.facing, action: animal.action }, animal.scale / detailStep, true),
+          animal.x, animal.y - animal.z, airborne ? LAYER.effect : LAYER.actor, !airborne);
+        if (asset.id === 'firefly') renderer.addLight(cols, rows, (animal.x - cameraX) / detailStep, (animal.y - animal.z - cameraY) / detailStep, 4, .6, 1, .2);
+      } });
+    }
+    for (const mover of MOVERS) {
+      const asset = ASSET_BY_ID.get(mover.assetId);
+      if (!asset) continue;
+      const state = moverAt(mover, time);
+      if (state.x < cameraX - 80 || state.x > viewRight + 80 || state.y < cameraY - 10 || state.y - 60 > viewBottom) continue;
+      const options = { time: time + mover.offset * 7, seed: 41, variant: mover.variant, action: state.moving ? 'walk' as const : 'idle' as const, facing: state.facing };
+      if (mover.kind === 'walker') {
+        draws.push({ y: state.y, draw: () => {
+          shadow(ids, state.x, state.y, 9, 2);
+          place(ids, assetCache.get(asset, options, mover.scale / detailStep, true), state.x, state.y, LAYER.actor);
+        } });
+      } else {
+        // A small horse pulls the cart; the horse walks ahead in the travel direction.
+        const ahead = state.facing === 'right' ? 34 : -34;
+        draws.push({ y: state.y, draw: () => {
+          shadow(ids, state.x, state.y, 20, 3);
+          // Driver first, a little behind the cart, so the cart hides the legs and they read as seated.
+          const driver = ASSET_BY_ID.get(mover.driver ?? 'peasant');
+          if (driver) place(ids, assetCache.get(driver, { ...options, action: 'idle', facing: state.facing }, .34 / detailStep, true), state.x + (state.facing === 'right' ? 6 : -6), state.y - 9, LAYER.actor, false);
+          place(ids, assetCache.get(asset, { ...options, action: 'idle' }, mover.scale / detailStep, true), state.x, state.y, LAYER.actor);
+          shadow(ids, state.x + ahead, state.y + 1, 16, 2.5);
+          place(ids, assetCache.get(HORSE, { ...options, seed: 33 }, .3 / detailStep, true), state.x + ahead, state.y + 1, LAYER.actor);
+        } });
+      }
+    }
     if (!mounted) draws.push({ y: hero.y, draw: () => {
       shadow(ids, hero.x, hero.y, 11, 2.5);
       const asset = playable[playerIndex];

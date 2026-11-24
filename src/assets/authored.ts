@@ -278,7 +278,22 @@ export function authoredFrame(art: GlyphArt, options: AssetOptions, subject: 'kn
         const leg = charLegs.length === 2
           ? (src.x <= charLegs[0].right ? charLegs[0] : charLegs[1])
           : undefined;
-        if (leg && src.y >= leg.hipY) {
+        if (action === 'sit') {
+          // Seated: fold thighs forward onto the saddle, shins hang down the
+          // horse's side, and the whole body drops by the folded length so the
+          // sprite's anchor stays at the stirrups. Works without leg detection.
+          const hip = leg?.hipY ?? H * .58;
+          const thigh = H * .17;
+          const d = src.y - hip;
+          if (d > 0) {
+            const t1 = Math.min(d, thigh);
+            // Thigh almost horizontal, shin shortened and angled back under the knee.
+            const shin = Math.max(0, d - thigh);
+            px += t1 * 1.15 - shin * .35;
+            py = hip + t1 * .12 + shin * .6;
+          }
+          py += H - (hip + thigh * .12 + (H - hip - thigh) * .6) - 1;
+        } else if (leg && src.y >= leg.hipY) {
           if (action === 'sit') {
             // Seated on horseback: thigh swings forward, shin drops to the stirrup.
             const hipAngle = -0.92;

@@ -8,7 +8,7 @@ export const LANDMARKS = [
   { key: 'Digit2', id: 'camp', name: 'Willow Encampment', x: 485, y: 235, spawnX: 440, spawnY: 255 },
   { key: 'Digit3', id: 'crypt', name: 'Moonveil Crypt', x: 220, y: 65, spawnX: 200, spawnY: 112 },
   { key: 'Digit4', id: 'forge', name: 'Dwarven Forge', x: 185, y: 380, spawnX: 168, spawnY: 400 },
-  { key: 'Digit5', id: 'town', name: 'Highmere', x: 900, y: 235, spawnX: 850, spawnY: 262 },
+  { key: 'Digit5', id: 'town', name: 'Highmere', x: 930, y: 320, spawnX: 900, spawnY: 250 },
   { key: 'Digit6', id: 'outskirts', name: 'Mudgate', x: 700, y: 330, spawnX: 724, spawnY: 310 },
   { key: 'Digit7', id: 'village', name: 'Oakhollow', x: 760, y: -60, spawnX: 770, spawnY: -22 },
   { key: 'Digit8', id: 'goblins', name: 'Goblin Warren', x: -60, y: 222, spawnX: -15, spawnY: 238 },
@@ -61,7 +61,7 @@ const plant = (id: string, assetId: string, x: number, y: number, scale: number,
 });
 
 const GROVE_CLEARANCE: Readonly<Record<string, number>> = {
-  meadow: 72, camp: 108, crypt: 112, forge: 112, town: 172, outskirts: 132,
+  meadow: 72, camp: 108, crypt: 112, forge: 112, town: 250, outskirts: 132,
   village: 150, goblins: 104, orcs: 108, elves: 94,
 };
 const PLANTABLE_GROUND = new Set<number>([GROUND.LUSH, GROUND.FOREST, GROUND.FLOWER, GROUND.MEADOW, GROUND.ASH, GROUND.FORGE, GROUND.CRYPT, GROUND.SAND, GROUND.BANK]);
@@ -168,36 +168,49 @@ const ROAD_MARKER_PROPS: readonly WorldProp[] = [
 const P = (id: string, assetId: string, x: number, y: number, scale: number, variant = 0, faction: WorldProp['faction'] = 'ambient') => prop(id, assetId, x, y, scale, variant, faction);
 const ring = (n: number, cx: number, cy: number, rx: number, ry: number, f: (i: number, x: number, y: number) => WorldProp) => Array.from({ length: n }, (_, i) => f(i, cx + Math.cos(i / n * 6.283) * rx, cy + Math.sin(i / n * 6.283) * ry));
 
-const TOWN_PROPS: readonly WorldProp[] = [
-  // Manor closes the north end of the avenue.
-  P('town-manor', 'manor', 900, 150, .7),
-  ...[0, 1].map(i => P(`town-guard-gate-${i}`, 'guard', 880 + i * 40, 168, .36, i, 'friendly')),
-  P('town-noble-1', 'noble', 872, 186, .37, 0, 'friendly'), P('town-noble-2', 'noble', 936, 192, .37, 1, 'friendly'),
-  // North terrace of townhouses (west and east of the manor).
-  P('town-house-n1', 'townhouse', 735, 204, .6, 0), P('town-house-n2', 'townhouse', 1010, 204, .6, 1), P('town-house-n3', 'townhouse', 1100, 204, .6, 2),
-  // South row flanking the avenue: tavern west, merchant house east.
-  P('town-tavern', 'tavern', 825, 355, .7, 0), P('town-house-s1', 'townhouse', 995, 312, .6, 2),
-  P('town-house-s3', 'townhouse', 1085, 312, .6, 0),
-  // Market square. Wide footprints sit beside, never across, the two streets.
-  P('town-well', 'well', 940, 190, .5, 0),
-  P('town-stall-1', 'market-stall', 862, 222, .45, 0), P('town-stall-2', 'market-stall', 938, 222, .45, 1),
-  P('town-stall-3', 'market-stall', 864, 256, .45, 2), P('town-stall-4', 'market-stall', 936, 256, .45, 0),
-  P('town-barrels-1', 'barrels', 934, 292, .4, 1), P('town-cart', 'cart', 942, 274, .45, 2),
-  P('town-merchant-1', 'merchant', 880, 218, .36, 0, 'friendly'), P('town-merchant-2', 'merchant', 920, 218, .36, 1, 'friendly'), P('town-merchant-3', 'merchant', 868, 268, .36, 2, 'friendly'),
-  P('town-noble-3', 'noble', 915, 250, .37, 2, 'friendly'),
-  P('town-guard-w', 'guard', 782, 246, .36, 0, 'friendly'), P('town-guard-e', 'guard', 1030, 246, .36, 1, 'friendly'),
-  P('town-townsfolk-1', 'dwarf-townsfolk', 960, 272, .33, 0, 'friendly'), P('town-townsfolk-2', 'dwarf-townsfolk', 830, 252, .33, 1, 'friendly'),
-  P('town-peasant-1', 'peasant', 1000, 252, .36, 0, 'friendly'),
-  // Lamps along the avenues.
-  ...[[832, 258], [950, 248], [850, 214], [950, 214], [790, 248], [1010, 248], [888, 290], [912, 190]].map(([x, y], i) => P(`town-lamp-${i}`, 'lamp-post', x, y, .5, i % 2)),
-  P('town-fence-1', 'fence', 1070, 270, .5, 2), P('town-fence-2', 'fence', 1120, 270, .5, 2),
-  ...[0, 1, 2, 3, 4, 5].map(i => P(`town-flowers-${i}`, ['flowers-pink', 'flowers-gold', 'flowers-blue'][i % 3], 780 + i * 56, 330 + (i % 2) * 22, .4)),
-];
+/** Highmere is authored at a compact size, then spread ×1.4 around (900, 235)
+ * with buildings enlarged by the same factor, so houses dwarf a mounted rider
+ * while streets keep their widths. Roads in landscape.ts use the same numbers. */
+export const TOWN_SPREAD = 1.4;
+const TOWN_BUILDINGS = new Set(['manor', 'townhouse', 'tavern', 'market-stall', 'barrels', 'cart']);
+export const townPoint = (x: number, y: number): [number, number] => [900 + (x - 900) * TOWN_SPREAD, 235 + (y - 235) * TOWN_SPREAD];
+const spreadTown = (p: WorldProp): WorldProp => {
+  const [x, y] = townPoint(p.x, p.y);
+  return { ...p, x, y, scale: TOWN_BUILDINGS.has(p.assetId) ? p.scale * TOWN_SPREAD : p.scale };
+};
+
+const TOWN_PROPS: readonly WorldProp[] = ([
+  // Street grid: High Street y=235, Market Row y=350, avenue x=900 (manor at its head).
+  // Sizes in world units (asset px × scale): townhouse 84×100, tavern 118×109,
+  // manor 135×122, stall 48×42. A building's base sits 14 below the street it
+  // faces from the north; nothing's body overlaps a street or a neighbour.
+  P('town-manor', 'manor', 900, 112, .45),
+  ...[0, 1].map(i => P(`town-guard-gate-${i}`, 'guard', 884 + i * 32, 130, .36, i, 'friendly')),
+  // North of High Street, either side of the avenue, with 20+ unit alleys between.
+  P('town-house-n1', 'townhouse', 790, 221, .4, 0), P('town-house-n2', 'townhouse', 1010, 221, .4, 1), P('town-house-n3', 'townhouse', 1110, 221, .4, 2),
+  // Bazaar between the two streets: two rows of stalls flanking the avenue.
+  P('town-stall-1', 'market-stall', 850, 290, .32, 0), P('town-stall-2', 'market-stall', 950, 290, .32, 1),
+  P('town-stall-3', 'market-stall', 850, 332, .32, 2), P('town-stall-4', 'market-stall', 950, 332, .32, 0),
+  P('town-stall-5', 'market-stall', 1030, 290, .32, 1), P('town-stall-6', 'market-stall', 1030, 332, .32, 2),
+  P('town-barrels-1', 'barrels', 1075, 300, .28, 1), P('town-cart', 'cart', 1080, 335, .3, 2),
+  // South of Market Row: tavern and a townhouse, set back so their roofs clear the street.
+  P('town-tavern', 'tavern', 920, 475, .42, 0), P('town-house-s1', 'townhouse', 1040, 465, .4, 2),
+  // People on the streets and in the bazaar.
+  P('town-merchant-1', 'merchant', 850, 304, .36, 0, 'friendly'), P('town-merchant-2', 'merchant', 950, 304, .36, 1, 'friendly'), P('town-merchant-3', 'merchant', 1030, 304, .36, 2, 'friendly'),
+  P('town-noble-1', 'noble', 878, 160, .37, 0, 'friendly'), P('town-noble-2', 'noble', 960, 244, .37, 1, 'friendly'), P('town-noble-3', 'noble', 915, 312, .37, 2, 'friendly'),
+  P('town-guard-w', 'guard', 776, 248, .36, 0, 'friendly'), P('town-guard-e', 'guard', 1066, 248, .36, 1, 'friendly'),
+  P('town-townsfolk-1', 'peasant', 990, 312, .36, 1, 'friendly'), P('town-townsfolk-2', 'farmer', 830, 244, .36, 1, 'friendly'),
+  P('town-peasant-1', 'peasant', 880, 362, .36, 0, 'friendly'),
+  // Lamps line both streets on their kerbs.
+  ...[[820, 246], [980, 246], [1060, 246], [870, 362], [990, 362], [912, 180]].map(([x, y], i) => P(`town-lamp-${i}`, 'lamp-post', x, y, .5, i % 2)),
+  ...[0, 1, 2, 3].map(i => P(`town-flowers-${i}`, ['flowers-pink', 'flowers-gold', 'flowers-blue'][i % 3], 960 + i * 30, 380, .35)),
+] as WorldProp[]).map(spreadTown);
 
 const OUTSKIRTS_PROPS: readonly WorldProp[] = [
-  P('mud-hovel-1', 'hovel', 655, 360, .55, 0), P('mud-hovel-2', 'hovel', 690, 405, .55, 1), P('mud-hovel-3', 'hovel', 785, 395, .5, 2),
-  P('mud-hovel-4', 'hovel', 585, 240, .5, 1), P('mud-hovel-5', 'hovel', 735, 260, .55, 0),
-  P('mud-ruin-1', 'ruin-wall', 690, 280, .5, 0), P('mud-ruin-2', 'ruin-wall', 618, 330, .5, 1), P('mud-ruin-3', 'ruin-wall', 778, 340, .45, 2),
+  // Hovels in two rows facing the lane at y=385, evenly spaced with gaps to walk between.
+  P('mud-hovel-1', 'hovel', 560, 371, .4, 0), P('mud-hovel-2', 'hovel', 650, 371, .4, 1), P('mud-hovel-3', 'hovel', 740, 371, .4, 2),
+  P('mud-hovel-4', 'hovel', 665, 455, .4, 1), P('mud-hovel-5', 'hovel', 755, 455, .4, 0),
+  P('mud-ruin-1', 'ruin-wall', 590, 300, .5, 0), P('mud-ruin-3', 'ruin-wall', 800, 330, .45, 2),
   P('mud-fire', 'campfire', 735, 340, .5, 0),
   P('mud-beggar-1', 'beggar', 688, 350, .34, 0, 'friendly'), P('mud-beggar-2', 'beggar', 718, 352, .34, 1, 'friendly'), P('mud-beggar-3', 'beggar', 640, 306, .34, 2, 'friendly'),
   P('mud-peasant-1', 'peasant', 676, 342, .36, 1, 'friendly'), P('mud-peasant-2', 'peasant', 726, 338, .36, 2, 'friendly'),
@@ -206,14 +219,15 @@ const OUTSKIRTS_PROPS: readonly WorldProp[] = [
 ];
 
 const VILLAGE_PROPS: readonly WorldProp[] = [
-  P('vil-well', 'well', 758, -50, .5, 0),
-  P('vil-cottage-1', 'cottage', 705, -66, .55, 1), P('vil-cottage-2', 'cottage', 812, -66, .55, 0), P('vil-cottage-3', 'cottage', 735, -98, .55, 2), P('vil-cottage-4', 'cottage', 786, -100, .55, 1),
+  P('vil-well', 'well', 700, -34, .5, 0),
+  // One row of cottages along the north side of the main street (y=-58).
+  P('vil-cottage-1', 'cottage', 650, -72, .4, 1), P('vil-cottage-2', 'cottage', 740, -72, .4, 0), P('vil-cottage-3', 'cottage', 830, -72, .4, 2), P('vil-cottage-4', 'cottage', 920, -72, .4, 1),
   P('vil-cart', 'cart', 820, 30, .45, 1), P('vil-barrels', 'barrels', 730, -42, .4, 1),
-  P('vil-hay-1', 'haystack', 892, -52, .5, 0), P('vil-hay-2', 'haystack', 635, -48, .5, 1), P('vil-hay-3', 'haystack', 905, -108, .5, 2),
+  P('vil-hay-1', 'haystack', 905, -30, .5, 0), P('vil-hay-2', 'haystack', 615, -30, .5, 1), P('vil-hay-3', 'haystack', 905, -108, .5, 2),
   ...[0, 1, 2, 3].map(i => P(`vil-fence-w-${i}`, 'fence', 640 + i * 24, -18, .45, 0)),
   ...[0, 1, 2, 3].map(i => P(`vil-fence-e-${i}`, 'fence', 826 + i * 24, -18, .45, 0)),
-  P('vil-farmer-1', 'farmer', 680, -98, .36, 0, 'friendly'), P('vil-farmer-2', 'farmer', 850, -100, .36, 1, 'friendly'), P('vil-farmer-3', 'farmer', 680, -48, .36, 2, 'friendly'), P('vil-farmer-4', 'farmer', 770, -146, .36, 0, 'friendly'),
-  P('vil-peasant-1', 'peasant', 745, -36, .36, 0, 'friendly'), P('vil-peasant-2', 'peasant', 790, -78, .36, 2, 'friendly'),
+  P('vil-farmer-1', 'farmer', 680, -98, .36, 0, 'friendly'), P('vil-farmer-2', 'farmer', 850, -100, .36, 1, 'friendly'), P('vil-farmer-3', 'farmer', 660, -40, .36, 2, 'friendly'), P('vil-farmer-4', 'farmer', 770, -146, .36, 0, 'friendly'),
+  P('vil-peasant-1', 'peasant', 745, -36, .36, 0, 'friendly'), P('vil-peasant-2', 'peasant', 845, -44, .36, 2, 'friendly'),
   P('vil-lamp', 'lamp-post', 740, -26, .5, 1), P('vil-flowers-1', 'flowers-gold', 800, -28, .4), P('vil-flowers-2', 'flowers-pink', 720, -80, .35),
   ...[0, 1, 2].map(i => P(`vil-bird-${i}`, 'bird', 700 + i * 55, -135 - i * 8, .25, i % 2)),
 ];

@@ -14,7 +14,7 @@ export interface AssetOptions {
   seed: number;
   variant: number;
   facing: 'left' | 'right';
-  action: 'idle' | 'walk' | 'sit';
+  action: 'idle' | 'walk' | 'sit' | 'run' | 'fly';
 }
 
 export interface AsciiAsset {

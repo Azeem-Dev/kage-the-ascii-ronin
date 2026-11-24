@@ -63,7 +63,7 @@ const PLANTABLE = new Set<number>([GROUND.LUSH, GROUND.FOREST, GROUND.FLOWER, GR
  *  in landmarks.ts supply the dense tree cover around them. */
 function clearOfSettlements(x: number, y: number): boolean {
   for (const r of LANDMARKS) {
-    const clearance = r.id === 'town' ? 180 : r.id === 'village' ? 150 : 88;
+    const clearance = r.id === 'town' ? 260 : r.id === 'village' ? 150 : 88;
     if (Math.hypot(x - r.x, y - r.y) < clearance) return false;
     if (Math.hypot(x - r.spawnX, y - r.spawnY) < 42) return false;
   }

@@ -120,9 +120,15 @@ const ROAD_DEFS: readonly (readonly number[])[] = [
   [3, 0, 156, 648, 240, 665, 330, 655, 420, 640, 500, 628],
   // Mudgate's market lane makes the settlement readable from the main road.
   [2.5, 0, 700, 322, 700, 350, 730, 370],
+  // Oakhollow main street and Mudgate lane: houses line these in rows.
+  [3, 0, 640, -58, 820, -58, 920, -58],
+  [2.5, 0, 600, 385, 700, 385, 820, 385],
   // Highmere streets (cobble)
-  [5, 1, 770, 235, 860, 235, 900, 235, 960, 235, 1050, 235],
-  [5, 1, 900, 165, 900, 235, 900, 335],
+  // High Street (north), Market Row (south) and the avenue up to the manor.
+  // (Spread ×1.4 around (900, 235) to match TOWN_SPREAD in landmarks.ts.)
+  [5, 1, 718, 235, 860, 235, 900, 235, 960, 235, 1152, 235],
+  [5, 1, 816, 396, 900, 396, 960, 396, 1152, 396],
+  [5, 1, 900, 74, 900, 235, 900, 396],
 ];
 const SEG = 10;
 const segs: number[] = [];

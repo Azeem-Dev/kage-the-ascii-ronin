@@ -30,7 +30,7 @@ export class Atmosphere {
     const layers = this.renderer.layers.length === ids.length ? this.renderer.layers : null;
     const put = (x: number, y: number, id: number) => {
       x = Math.round(x); y = Math.round(y);
-      if (x >= 0 && y >= 0 && x < cols && y < rows) { const i = y * cols + x; ids[i] = id; if (layers) layers[i] = LAYER.effect; }
+      if (x >= 0 && y >= 0 && x < cols && y < rows) { const i = y * cols + x; if (layers && layers[i] >= LAYER.prop) return; ids[i] = id; if (layers) layers[i] = LAYER.effect; }
     };
     // Analytic downstream advection. Trails travel with the river's changing
     // centerline instead of swapping symbols in stationary screen locations.

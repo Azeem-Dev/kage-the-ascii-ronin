@@ -44,4 +44,31 @@ assert(waterDepth(riverCenter(230) + 100, 230) < 0);
 const sample = landscapeCell(400, 230, 1, 17);
 landscapeCell(-15, 200, 4, 999);
 assert.deepEqual(landscapeCell(400, 230, 1, 17), sample, 'Landscape cache changes deterministic data');
+const { WorldChunks, generateChunk } = await import(load(path.join(root, 'src/game/worldChunks.ts')));
+assert.deepEqual(generateChunk(-4, 7), generateChunk(-4, 7), 'Chunk regeneration differs');
+const world = new WorldChunks();
+const original = world.around(0, 0, 300, 160);
+assert.equal(world.around(1, 1, 300, 160), original, 'Same chunk window allocates a new prop list');
+world.around(20000, -20000, 300, 160);
+assert(world.loadedCount < 50, 'Distant chunk travel retains old chunks');
+assert.deepEqual(world.around(0, 0, 300, 160), original, 'Returning to an evicted region changes props');
+const { AssetCache } = await import(load(path.join(root, 'src/render/assetCache.ts')));
+let generated = 0;
+const definition = { ...ASSETS[1], generate: o => { generated++; return ASSETS[1].generate(o); } };
+const glyphIds = new Map();
+const fakeRenderer = {
+  compile: () => ({ width: 1, height: 1, ids: new Uint32Array(1) }),
+  glyph: (glyph, color) => { const key = `${glyph}:${color}`; if (!glyphIds.has(key)) glyphIds.set(key, glyphIds.size + 1); return glyphIds.get(key); },
+};
+const cache = new AssetCache(fakeRenderer);
+const options = { time: 0, seed: 17, variant: 0, facing: 'right', action: 'idle' };
+const compiled = cache.get(definition, options, .2);
+assert.equal(cache.get(definition, { ...options, time: 5 }, .2), compiled);
+assert.equal(generated, 1, 'Static trees regenerate on animation ticks');
+const { TerrainLayer } = await import(load(path.join(root, 'src/render/terrainLayer.ts')));
+const terrain = new TerrainLayer(fakeRenderer);
+const ground = terrain.get(0, 0, 12, 12, 4, 0).slice();
+assert.deepEqual(terrain.get(0, 0, 12, 12, 4, 5), ground, 'Ground texture changes with time');
+const shifted = terrain.get(4, 0, 12, 12, 4, 5);
+for (let y = 0; y < 12; y++) for (let x = 0; x < 11; x++) assert.equal(shifted[y * 12 + x], ground[y * 12 + x + 1], 'Coarse camera movement resamples ground texture');
 console.log(`PASS: ${ASSETS.length} assets, ${frames} valid deterministic frames, animated asset variation, bounds, variants, seeds, river semantics and invalid data rejection.`);

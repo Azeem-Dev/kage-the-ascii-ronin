@@ -1,7 +1,11 @@
 # Active task
 
-Build an ASCII asset workshop before expanding the open world. Preserve the legacy game scene. Deliver reusable character, tree, grass and water candidates, isolated previews, animation/variant controls and versioned local review decisions. Update both artifact prompts for an asset-first open-world roadmap and leave a handoff for DeepSeek.
+Build a full-screen playable ASCII open world using reusable assets. The user explicitly rejected a workshop/dashboard and in-app approval controls: show the running game and receive feedback in conversation. Preserve the legacy scene at `?mode=game`. Update both master prompts and leave a DeepSeek handoff.
 
-References: all ten videos in `motivation/`, sampled at four timestamps each. Quality targets: detailed silhouettes, fine shaded glyphs, animated vegetation/water, reusable content. The reference renderer technology is unknown.
+References: originally ten videos, now 22 in `motivation/`; all sampled at four timestamps. Additional references include Moonlit Cave, a furry spider, Obsidian Paladin and layered animated creatures. Quality targets: detailed silhouettes, fine shaded glyphs, animated vegetation/water. Underlying reference renderer technology is unknown.
 
-Status: implementing shared asset contract, generators, renderer and workshop. Validation pending. `AIOS.md` and `skills/README.md` are absent. Existing build has unused imports in `src/render/asciiScene.ts`; fix only these imports for build validation.
+Implemented: native glyph contracts, ronin/pine/rock/horse definitions, grass/water generators, full-screen river exploration, deterministic chunk loading/eviction, walking/wading, horse mounting (E), zoom 0.25–5 (wheel or +/-), pause, robe variants and reset. Workshop files removed. User dislikes the current character and horse art; an art revision is still needed.
+
+CURRENT PRIORITY: user reports severe flickering and ~5 FPS at wide zoom. Reproduce and optimize before further art additions. Causes found: synchronized pine regeneration, full terrain generation and per-cell pixel copies every frame, coarse samples not aligned to world coordinates, dense wind glyph changes. Replacing with cached terrain/static sprites and dirty-cell rendering. Final validation pending.
+
+`AIOS.md` and `skills/README.md` are absent. Legacy unused imports were removed so the build passed earlier. Current source is being changed; rerun tests/build/browser checks after optimization.

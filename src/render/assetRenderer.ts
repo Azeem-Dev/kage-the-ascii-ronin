@@ -1,73 +1,99 @@
-import type { AsciiCell } from '../assets/types.ts';
+﻿import type { AsciiCell } from '../assets/types.ts';
 
-/** Shared native-glyph renderer for reusable world instances.
- * Glyphs are cached individually; animation changes placement, never rasterizes
- * the whole asset. Preview zoom enlarges the same cells used at gameplay size.
+export interface GlyphSprite {
+  width: number;
+  height: number;
+  ids: Uint32Array;
+}
+
+/** Cached glyph tiles + typed cell grids. Static layers are baked once; each
+ * frame only changed cells copy their tiny glyph bitmap into the framebuffer.
+ * Zero per-frame getImageData, font rasterization or per-cell string lookups.
  */
 export class AssetRenderer {
-  private cache = new Map<string, HTMLCanvasElement>();
-  private pixelCache = new Map<string, Map<string, Uint32Array>>();
+  private lookup = new Map<string, Map<string, number>>();
+  private tiles: Uint32Array[] = [];
+  private previous = new Uint32Array(0);
+  private working = new Uint32Array(0);
   private output: ImageData | null = null;
-  constructor(readonly cellWidth = 7, readonly cellHeight = 10) {}
+  private outputPixels = new Uint32Array(0);
+  changedCells = 0;
+  constructor(readonly cellWidth = 4, readonly cellHeight = 6) {
+    const empty = new Uint32Array(cellWidth * cellHeight);
+    empty.fill(0xff100b07);
+    this.tiles.push(empty);
+  }
 
-  draw(ctx: CanvasRenderingContext2D, cells: readonly AsciiCell[], x: number, y: number, scale = 1): void {
-    ctx.imageSmoothingEnabled = false;
+  glyph(glyph: string, color: string): number {
+    let colors = this.lookup.get(color);
+    if (!colors) { colors = new Map(); this.lookup.set(color, colors); }
+    const found = colors.get(glyph);
+    if (found !== undefined) return found;
+    const tile = document.createElement('canvas');
+    tile.width = this.cellWidth; tile.height = this.cellHeight;
+    const ctx = tile.getContext('2d', { willReadFrequently: true });
+    if (!ctx) throw new Error('Cannot cache glyph');
+    ctx.fillStyle = '#070b10'; ctx.fillRect(0, 0, tile.width, tile.height);
+    ctx.font = `${this.cellHeight}px "Courier New", monospace`; ctx.textAlign = 'center';
+    ctx.fillStyle = color; ctx.fillText(glyph, this.cellWidth / 2, this.cellHeight * .82);
+    const id = this.tiles.length;
+    this.tiles.push(new Uint32Array(ctx.getImageData(0, 0, tile.width, tile.height).data.buffer));
+    colors.set(glyph, id);
+    return id;
+  }
+
+  /** Minify once, not thousands of source cells on every world frame. */
+  compile(cells: readonly AsciiCell[], width: number, height: number, scale: number): GlyphSprite {
+    const w = Math.max(1, Math.ceil(width * scale) + 1);
+    const h = Math.max(1, Math.ceil(height * scale) + 1);
+    const ids = new Uint32Array(w * h);
     for (const cell of cells) {
-      const key = `${cell.glyph}:${cell.color}`;
-      let glyph = this.cache.get(key);
-      if (!glyph) {
-        glyph = document.createElement('canvas');
-        glyph.width = this.cellWidth;
-        glyph.height = this.cellHeight;
-        const g = glyph.getContext('2d');
-        if (!g) throw new Error('Cannot create glyph cache');
-        g.font = `${this.cellHeight}px "Courier New", monospace`;
-        g.textAlign = 'center';
-        g.textBaseline = 'alphabetic';
-        g.fillStyle = cell.color;
-        g.fillText(cell.glyph, this.cellWidth / 2, this.cellHeight * .82);
-        this.cache.set(key, glyph);
+      const x = Math.round(cell.x * scale); const y = Math.round(cell.y * scale);
+      if (x >= 0 && y >= 0 && x < w && y < h) ids[y * w + x] = this.glyph(cell.glyph, cell.color);
+    }
+    return { width: w, height: h, ids };
+  }
+
+  stamp(target: Uint32Array, cols: number, rows: number, sprite: GlyphSprite, x: number, y: number): void {
+    x = Math.round(x); y = Math.round(y);
+    const minX = Math.max(0, -x); const maxX = Math.min(sprite.width, cols - x);
+    const minY = Math.max(0, -y); const maxY = Math.min(sprite.height, rows - y);
+    for (let sy = minY; sy < maxY; sy++) {
+      const src = sy * sprite.width;
+      const dst = (y + sy) * cols + x;
+      for (let sx = minX; sx < maxX; sx++) {
+        const id = sprite.ids[src + sx];
+        if (id) target[dst + sx] = id;
       }
-      ctx.drawImage(glyph, Math.round(x + cell.x * this.cellWidth * scale), Math.round(y + cell.y * this.cellHeight * scale), this.cellWidth * scale, this.cellHeight * scale);
     }
   }
 
-  /** Full game scene: one framebuffer upload rather than a draw call per cell. */
-  grid(ctx: CanvasRenderingContext2D, cells: readonly AsciiCell[], cols: number, rows: number): void {
-    const width = cols * this.cellWidth;
-    const height = rows * this.cellHeight;
-    if (!this.output || this.output.width !== width || this.output.height !== height) this.output = ctx.createImageData(width, height);
-    const pixels = new Uint32Array(this.output.data.buffer);
-    pixels.fill(0xff100b07);
-    // Last cell wins: this provides proper transparent asset layering before
-    // glyph rasterization, without rectangular backgrounds around objects.
-    for (const cell of cells) {
-      const x = Math.round(cell.x); const y = Math.round(cell.y);
-      if (x < 0 || y < 0 || x >= cols || y >= rows) continue;
-      let colorCache = this.pixelCache.get(cell.color);
-      if (!colorCache) { colorCache = new Map(); this.pixelCache.set(cell.color, colorCache); }
-      let glyph = colorCache.get(cell.glyph);
-      if (!glyph) {
-        const tile = document.createElement('canvas'); tile.width = this.cellWidth; tile.height = this.cellHeight;
-        const g = tile.getContext('2d', { willReadFrequently: true });
-        if (!g) throw new Error('Cannot cache glyph');
-        g.fillStyle = '#070b10'; g.fillRect(0, 0, tile.width, tile.height);
-        g.font = `${this.cellHeight}px "Courier New", monospace`; g.textAlign = 'center';
-        g.fillStyle = cell.color; g.fillText(cell.glyph, this.cellWidth / 2, this.cellHeight * .82);
-        glyph = new Uint32Array(g.getImageData(0, 0, tile.width, tile.height).data.buffer);
-        colorCache.set(cell.glyph, glyph);
-      }
-      const dx = x * this.cellWidth;
-      const dy = y * this.cellHeight;
-      for (let row = 0; row < this.cellHeight; row++) {
-        const start = (dy + row) * width + dx;
-        const source = row * this.cellWidth;
-        if (this.cellWidth === 4) {
-          pixels[start] = glyph[source]; pixels[start + 1] = glyph[source + 1];
-          pixels[start + 2] = glyph[source + 2]; pixels[start + 3] = glyph[source + 3];
-        } else for (let col = 0; col < this.cellWidth; col++) pixels[start + col] = glyph[source + col];
+  begin(base: Uint32Array): Uint32Array {
+    if (this.working.length !== base.length) this.working = new Uint32Array(base.length);
+    this.working.set(base);
+    return this.working;
+  }
+
+  present(ctx: CanvasRenderingContext2D, ids: Uint32Array, cols: number, rows: number): void {
+    const width = cols * this.cellWidth; const height = rows * this.cellHeight;
+    const resized = !this.output || this.output.width !== width || this.output.height !== height;
+    if (resized) {
+      this.output = ctx.createImageData(width, height);
+      this.outputPixels = new Uint32Array(this.output.data.buffer);
+      this.previous = new Uint32Array(ids.length); this.previous.fill(0xffffffff);
+    }
+    this.changedCells = 0;
+    for (let i = 0; i < ids.length; i++) {
+      const id = ids[i];
+      if (this.previous[i] === id) continue;
+      this.previous[i] = id; this.changedCells++;
+      const tile = this.tiles[id];
+      const dx = i % cols * this.cellWidth; const dy = Math.floor(i / cols) * this.cellHeight;
+      for (let y = 0; y < this.cellHeight; y++) {
+        const dst = (dy + y) * width + dx; const src = y * this.cellWidth;
+        for (let x = 0; x < this.cellWidth; x++) this.outputPixels[dst + x] = tile[src + x];
       }
     }
-    ctx.putImageData(this.output, 0, 0);
+    if (this.changedCells && this.output) ctx.putImageData(this.output, 0, 0);
   }
 }

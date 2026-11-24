@@ -1,0 +1,55 @@
+{
+  "viewport": [
+    1866,
+    900
+  ],
+  "browser": "157.0.8103.79",
+  "baselineBeforeOptimization": {
+    "fps": 5.493449,
+    "maxMs": 373.8,
+    "note": "Same headless Chrome, viewport and zoom; 60 frames before caching/dirty-cell changes."
+  },
+  "stationary": {
+    "fps": 60.21375884101438,
+    "p95Ms": 20.5,
+    "maxMs": 21.90000009536743,
+    "diagnostics": {
+      "generateMs": "1.8",
+      "terrainMs": "0.1",
+      "blitMs": "2.9",
+      "changedCells": "8",
+      "playerX": "387.77",
+      "playerY": "230.00",
+      "time": "2.70",
+      "loadedChunks": "216",
+      "zoom": "0.25",
+      "mounted": "false"
+    }
+  },
+  "moving": {
+    "fps": 54.075976749653954,
+    "p95Ms": 49.799999713897705,
+    "maxMs": 53.59999990463257,
+    "diagnostics": {
+      "generateMs": "0.8",
+      "terrainMs": "0.0",
+      "blitMs": "6.2",
+      "changedCells": "4",
+      "playerX": "436.53",
+      "playerY": "230.00",
+      "time": "5.55",
+      "loadedChunks": "216",
+      "zoom": "0.25",
+      "mounted": "false"
+    }
+  },
+  "checks": [
+    "stable grass pixels",
+    "bounded idle dirty cells",
+    "movement",
+    "0.25 and 5 zoom limits",
+    "mount/dismount",
+    "pause pixels",
+    "no page errors"
+  ]
+}

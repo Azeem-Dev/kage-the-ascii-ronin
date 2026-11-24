@@ -10,6 +10,16 @@ export interface GridDensityConfig {
 }
 
 export const CONFIG = {
+  exploration: {
+    defaultZoom: 0.8,
+    minimumZoom: 0.25,
+    maximumZoom: 5,
+    zoomSensitivity: 0.0016,
+    walkSpeed: 22,
+    runSpeed: 36,
+    rideSpeed: 55,
+    gallopSpeed: 85,
+  },
   // Target display & canvas
   display: {
     targetFps: 60,

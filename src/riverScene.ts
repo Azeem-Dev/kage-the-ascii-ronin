@@ -225,7 +225,7 @@ export function startRiverScene(): void {
       sunColor: d > .5 ? [1, .94 - dusk * .15, .82 - dusk * .3] : [.55, .68, 1],
       shadowX: Math.cos(angle) * (d > .5 ? .7 : -.5),
       shadowY: .16 + (1 - Math.abs(Math.cos(angle))) * .12,
-      saturation: 1.12 + d * .08,
+      saturation: .9 + d * .12,
     };
   }
   function tick(now: number): void {
@@ -345,6 +345,7 @@ export function startRiverScene(): void {
     if (night > .35) renderer.addLight(cols, rows, (hero.x - cameraX) / detailStep, (hero.y - 18 - cameraY) / detailStep, 46 / detailStep, .35 * night, .3 * night, .22 * night);
     const generationEnd = performance.now();
     atmosphere.render(ids, cols, rows, cameraX, cameraY, detailStep, time);
+    canvas.dataset.atmosMs = (performance.now() - generationEnd).toFixed(1);
     const canScroll = lastCols === cols && lastRows === rows && lastDetailStep === detailStep && Number.isFinite(lastCameraX);
     const scrollX = canScroll ? -Math.round((cameraX - lastCameraX) / detailStep) : 0;
     const scrollY = canScroll ? -Math.round((cameraY - lastCameraY) / detailStep) : 0;
@@ -356,6 +357,8 @@ export function startRiverScene(): void {
     canvas.dataset.terrainMs = (terrainEnd - renderStart).toFixed(1);
     canvas.dataset.blitMs = (performance.now() - generationEnd).toFixed(1);
     canvas.dataset.changedCells = String(renderer.changedCells);
+    canvas.dataset.shadeMs = renderer.shadeMs.toFixed(1);
+    canvas.dataset.putMs = (performance.now() - renderer.putStart).toFixed(1);
     frames++;
     if (now - fpsTime > 750) {
       fps = Math.round(frames * 1000 / (now - fpsTime)); frames = 0; fpsTime = now;

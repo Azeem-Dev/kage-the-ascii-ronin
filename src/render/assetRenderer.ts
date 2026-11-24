@@ -58,6 +58,7 @@ export class AssetRenderer {
   private under = new Uint32Array(0);
   private shadow = new Uint8Array(0);
   private outline = new Uint8Array(0);
+  private height = new Uint8Array(0);
   private lightR = new Float32Array(0);
   private lightG = new Float32Array(0);
   private lightB = new Float32Array(0);
@@ -77,6 +78,8 @@ export class AssetRenderer {
   private rasterCanvas: HTMLCanvasElement | null = null;
   private rasterContext: CanvasRenderingContext2D | null = null;
   changedCells = 0;
+  shadeMs = 0;
+  putStart = 0;
   lighting: Lighting = { ambient: [.8, .82, .82], sun: .45, sunColor: [1, .95, .85], shadowX: .55, shadowY: .18, saturation: 1.3 };
 
   constructor(public cellWidth = 4, public cellHeight = 6) {}
@@ -287,26 +290,48 @@ export class AssetRenderer {
       }
     }
 
-    for (let y = 0; y < rows; y++) for (let x = 0; x < cols; x++) {
+    // Height above each object's base, in cells (bottom-up run of solid cells per
+    // column). Drives volume shading: dark at the foot, lit toward the top.
+    if (this.height.length !== n) this.height = new Uint8Array(n);
+    const height = this.height;
+    for (let x = 0; x < cols; x++) {
+      let run = 0;
+      for (let y = rows - 1; y >= 0; y--) {
+        const i = y * cols + x; const l = layers[i];
+        run = l === LAYER.prop || l === LAYER.actor ? Math.min(255, run + 1) : 0;
+        height[i] = run;
+      }
+    }
+
+    for (let y = 0; y < rows; y++) {
+      // Atmospheric depth: the top of the screen is farther away, hazier and darker.
+      const depth = .72 + .28 * (y / rows);
+      for (let x = 0; x < cols; x++) {
       const i = y * cols + x;
       const layer = layers[i];
       // Light arriving at this cell.
       let lr = ar; let lg = ag; let lb = ab; let sun = L.sun;
       if (layer === LAYER.ground || layer === LAYER.effect) {
-        const s = shadow[i] * (1 / 255);
-        sun *= 1 - s; const a = 1 - .4 * s; lr *= a; lg *= a; lb *= a;
+        let s = shadow[i] * (1 / 255);
+        // Ambient occlusion where the ground meets an object standing above it.
+        if (y > 0 && height[i - cols]) s = Math.max(s, .75);
+        else if (y > 1 && height[i - 2 * cols]) s = Math.max(s, .45);
+        sun *= 1 - s; const a = 1 - .55 * s; lr *= a; lg *= a; lb *= a;
       } else {
-        // Silhouette edges facing the light catch it; far edges fall off.
-        const solid = (j: number) => { const l = layers[j]; return l === LAYER.prop || l === LAYER.actor; };
+        // Volume: base in shadow, top catches the sky; lit side vs far side.
+        const h = height[i];
+        const up = h < 18 ? h / 18 : 1;
+        // Actors stay fully lit so they read as the subject, like the references.
+        let e = layer === LAYER.actor ? .15 : up * .5 - .35;
         const lx = x + litSide; const fx = x - litSide;
-        let e = 0;
-        if (y > 0 && !solid(i - cols)) e += .55;
-        if (lx >= 0 && lx < cols && !solid(i + litSide)) e += .4;
-        if (fx >= 0 && fx < cols && !solid(i - litSide)) e -= .45;
-        if (y < rows - 1 && !solid(i + cols)) e -= .25;
-        sun *= 1 + e;
-        const a = 1 + e * .18; lr *= a; lg *= a; lb *= a;
+        const above = y > 0 ? layers[i - cols] : 0;
+        if (above !== LAYER.prop && above !== LAYER.actor) e += .55;
+        if (lx >= 0 && lx < cols) { const l = layers[i + litSide]; if (l !== LAYER.prop && l !== LAYER.actor) e += .4; }
+        if (fx >= 0 && fx < cols) { const l = layers[i - litSide]; if (l !== LAYER.prop && l !== LAYER.actor) e -= .5; }
+        sun *= Math.max(0, 1 + e);
+        const a = Math.max(.25, 1 + e * .35); lr *= a; lg *= a; lb *= a;
       }
+      if (layer !== LAYER.actor) { lr *= depth; lg *= depth; lb *= depth; }
       lr += sun * sr; lg += sun * sg; lb += sun * sb;
       if (lights) { lr += this.lightR[i]; lg += this.lightG[i]; lb += this.lightB[i]; }
 
@@ -322,15 +347,19 @@ export class AssetRenderer {
         mask = def.mask;
         fr = def.r * lr; fgc = def.g * lg; fb = def.b * lb;
         // Ground recedes so props and actors carry the picture.
-        if (layer === LAYER.ground) { fr *= .72; fgc *= .72; fb *= .72; }
+        // Ground recedes hard and greys out so lit objects carry the picture (references).
+        if (layer === LAYER.ground) {
+          const gl = .299 * fr + .587 * fgc + .114 * fb;
+          fr = (gl + (fr - gl) * .6) * .5; fgc = (gl + (fgc - gl) * .6) * .5; fb = (gl + (fb - gl) * .6) * .5;
+        }
         if (layer === LAYER.effect) { fr = Math.max(fr, def.r * .95); fgc = Math.max(fgc, def.g * .95); fb = Math.max(fb, def.b * .95); }
         if (layer === LAYER.actor) {
-          fr *= 1.12; fgc *= 1.12; fb *= 1.12;
-          if (outline[i] === 2) { fr += .12; fgc += .11; fb += .09; }
+          fr = fr * 1.4 + .06; fgc = fgc * 1.4 + .06; fb = fb * 1.4 + .06;
+          if (outline[i] === 2) { fr += .18; fgc += .17; fb += .14; }
         }
       }
       let br = bgDef.r * lr * bgFactor; let bgg = bgDef.g * lg * bgFactor; let bb = bgDef.b * lb * bgFactor;
-      if (outline[i] === 1) { fr *= .22; fgc *= .22; fb *= .25; br *= .2; bgg *= .2; bb *= .22; }
+      if (outline[i] === 1) { fr *= .1; fgc *= .1; fb *= .12; br *= .1; bgg *= .1; bb *= .12; }
       // Saturation: the references are rich, not grey.
       let lum = .299 * fr + .587 * fgc + .114 * fb;
       fr = lum + (fr - lum) * sat; fgc = lum + (fgc - lum) * sat; fb = lum + (fb - lum) * sat;
@@ -340,6 +369,7 @@ export class AssetRenderer {
       if (lum < .045) mask = 0;
       this.fg[i] = mask ? (mask << 15) | (q5(fr) << 10) | (q5(fgc) << 5) | q5(fb) : 0;
       this.bg[i] = bgFactor ? (q5(br + BG[0] / 255 * .5) << 10) | (q5(bgg + BG[1] / 255 * .5) << 5) | q5(bb + BG[2] / 255 * .5) : bgEmpty;
+      }
     }
   }
 
@@ -360,7 +390,9 @@ export class AssetRenderer {
     // A hidden or zero-size window (e.g. during startup) has nothing to present.
     if (!(width > 0 && height > 0)) return;
     if (this.layers.length !== ids.length) { this.layers = new Uint8Array(ids.length); this.under = new Uint32Array(ids.length); this.shadow = new Uint8Array(ids.length); this.outline = new Uint8Array(ids.length); }
+    const shadeStart = performance.now();
     this.shade(ids, cols, rows);
+    this.shadeMs = performance.now() - shadeStart;
 
     const resized = !this.output || this.output.width !== width || this.output.height !== height;
     const tileSize = 48;
@@ -418,12 +450,19 @@ export class AssetRenderer {
         }
       }
     }
+    this.putStart = performance.now();
     if (!this.output || (!this.changedCells && !fullRedraw)) return;
     if (fullRedraw) { ctx.putImageData(this.output, 0, 0); return; }
-    for (let ty = 0; ty < tileRows; ty++) for (let tx = 0; tx < tileCols; tx++) {
-      if (!this.dirtyTiles[ty * tileCols + tx]) continue;
-      ctx.putImageData(this.output, 0, 0, tx * tileSize * cw, ty * tileSize * ch,
-        Math.min(tileSize, cols - tx * tileSize) * cw, Math.min(tileSize, rows - ty * tileSize) * ch);
+    // One upload per horizontal run of dirty tiles: far fewer calls than per tile.
+    for (let ty = 0; ty < tileRows; ty++) {
+      let tx = 0;
+      while (tx < tileCols) {
+        if (!this.dirtyTiles[ty * tileCols + tx]) { tx++; continue; }
+        const startX = tx;
+        while (tx < tileCols && this.dirtyTiles[ty * tileCols + tx]) tx++;
+        ctx.putImageData(this.output, 0, 0, startX * tileSize * cw, ty * tileSize * ch,
+          (Math.min(cols, tx * tileSize) - startX * tileSize) * cw, Math.min(tileSize, rows - ty * tileSize) * ch);
+      }
     }
   }
 }

@@ -83,7 +83,7 @@ const VALLEY = ['#20372d', '#2d4938', '#405b40', '#59704a', '#75875a', '#96a16d'
 const MEADOW = ['#294c45', '#3d7258', '#559363', '#7cb67a', '#b1ca8a', '#d2d6a0'];
 const AUTUMN = ['#433d32', '#68523b', '#896b43', '#b28c54', '#c6a76e', '#d7c098'];
 const CRYPT = ['#252e41', '#37465c', '#4d6374', '#738798', '#9babc0', '#b6c1d1'];
-const WATER = ['#101d27', '#1b303c', '#2d4854', '#456470', '#6e8990', '#b2c3bd'];
+const WATER = ['#050a10', '#0b1620', '#142632', '#2b4a58', '#6e8990', '#c2d4d0'];
 const FOREST = ['#111c17', '#19291e', '#243a25', '#344e2c', '#486137', '#5d7040'];
 const TOWNGRASS = ['#2b5a38', '#3a7041', '#4d8749', '#64a057', '#82b86a', '#a0c986'];
 const DIRT = ['#4b3b29', '#60492f', '#7a5e3d', '#8f7249', '#a38859', '#b99f74'];
@@ -333,8 +333,8 @@ export function landscapeCell(x: number, y: number, time: number, seed: number):
       const foam = depth < 4 && current > .68 && n > .82;
       const light = depth > 24 ? 0 : depth > 10 ? 1 : 2;
       if (foam) return { x, y, glyph: ['o', '°', '*', ':'][Math.floor(n * 4) % 4], color: WATER[5] };
-      if (n < .38) return { x, y, glyph: '~', color: WATER[0] };
-      return { x, y, glyph: current > .65 ? '~' : n > .88 ? ',' : n > .62 ? '-' : '.', color: WATER[current > .78 ? Math.min(4, light + 2) : light] };
+      if (n < .58) return null;
+      return { x, y, glyph: current > .7 ? '~' : n > .9 ? ',' : '.', color: WATER[current > .78 ? Math.min(4, light + 2) : light] };
     }
     case GROUND.BANK: {
       const lip = depth > -1.1;
@@ -403,9 +403,9 @@ export function landscapeCell(x: number, y: number, time: number, seed: number):
       const light = n * .28 + m * .62 + .06;
       let glyph: string;
       let color = pick(palette, light);
-      if (n < .36 || (m < .22 && n < .72)) glyph = ' ';
-      else if (kind === GROUND.MEADOW && n > .95) { glyph = ['*', '+', ':'][Math.floor(n * 70) % 3]; color = ['#a4a0df', '#d99abb', '#dfc488'][Math.floor(n * 99) % 3]; }
-      else if (n < .53) glyph = "'";
+      if (n < .52 || (m < .28 && n < .82)) glyph = ' ';
+      else if (kind === GROUND.MEADOW && n > .965) { glyph = ['*', '+', ':'][Math.floor(n * 70) % 3]; color = ['#8b88c4', '#b87d9c', '#bfa86e'][Math.floor(n * 99) % 3]; }
+      else if (n < .66) glyph = "'";
       else {
         const i = (x & (COLS - 1));
         if (colTag[i] !== x) { colTag[i] = x; colSin[i] = Math.sin(x * .055); colCos[i] = Math.cos(x * .055); }

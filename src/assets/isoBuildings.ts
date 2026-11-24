@@ -207,7 +207,7 @@ function isoRaster(w: number, h: number, ax: number, ay: number, draw: (put: (wx
 
 function isoMarketStall(o: AssetOptions): AsciiCell[] {
   const v = ((Math.floor(o.variant) % 3) + 3) % 3;
-  const stripeColors = [['#9e322e', '#ebe0d2'], ['#2b5e96', '#eae6da'], ['#437842', '#e4ca5e']][v];
+  const stripeColors = [['#7d2925', '#aba192'], ['#244e7d', '#aba69a'], ['#356134', '#ad9948']][v];
   const a = 24; const b = 13; const w = 84; const h = 76; const ax = 42; const ay = 60;
   return isoRaster(w, h, ax, ay, put => {
     // Back posts

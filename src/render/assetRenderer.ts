@@ -136,10 +136,29 @@ export class AssetRenderer {
     const w = Math.max(1, Math.ceil(width * scale) + 1);
     const h = Math.max(1, Math.ceil(height * scale) + 1);
     const ids = new Uint32Array(w * h);
-    if (scale >= .95) {
+    if (Math.abs(scale - 1) < .03) {
       for (const cell of cells) {
         const x = Math.round(cell.x * scale); const y = Math.round(cell.y * scale);
         if (x >= 0 && y >= 0 && x < w && y < h) ids[y * w + x] = this.glyph(cell.glyph, cell.color);
+      }
+      return { width: w, height: h, ids };
+    }
+    // Upscaling (> 1.03): sample each output cell from its nearest source cell so
+    // stretched sprites never leave blank black horizontal/vertical grid lines.
+    if (scale > 1) {
+      const src = new Uint32Array(width * height);
+      for (const cell of cells) {
+        if (cell.x >= 0 && cell.y >= 0 && cell.x < width && cell.y < height) {
+          src[cell.y * width + cell.x] = this.glyph(cell.glyph, cell.color);
+        }
+      }
+      for (let y = 0; y < h; y++) {
+        const sy = Math.min(height - 1, Math.floor(y / scale));
+        for (let x = 0; x < w; x++) {
+          const sx = Math.min(width - 1, Math.floor(x / scale));
+          const id = src[sy * width + sx];
+          if (id) ids[y * w + x] = id;
+        }
       }
       return { width: w, height: h, ids };
     }
@@ -208,7 +227,7 @@ export class AssetRenderer {
         if (hole) {
           // See-through window: fully open in the middle, dithered toward the rim.
           const d = ((x + sx - hole.x) / hole.rx) ** 2 + ((y + sy - hole.y) / hole.ry) ** 2;
-          if (d < .55 || (d < 1 && ((x + sx + y + sy) & 1))) continue;
+          if (d < .45 ? ((x + sx + y + sy) & 3) !== 0 : d < 1 && ((x + sx + y + sy) & 1)) continue;
         }
         target[dst + sx] = id; if (layers) layers[dst + sx] = layer;
       }
@@ -363,11 +382,10 @@ export class AssetRenderer {
       if (id && def) {
         mask = def.mask;
         fr = def.r * lr; fgc = def.g * lg; fb = def.b * lb;
-        // Ground recedes so props and actors carry the picture.
-        // Ground recedes hard and greys out so lit objects carry the picture (references).
+        // Ground recedes hard so lit objects and actors carry the picture.
         if (layer === LAYER.ground) {
           const gl = .299 * fr + .587 * fgc + .114 * fb;
-          fr = (gl + (fr - gl) * .6) * .5; fgc = (gl + (fgc - gl) * .6) * .5; fb = (gl + (fb - gl) * .6) * .5;
+          fr = (gl + (fr - gl) * .55) * .36; fgc = (gl + (fgc - gl) * .55) * .36; fb = (gl + (fb - gl) * .55) * .36;
         }
         if (layer === LAYER.effect) { fr = Math.max(fr, def.r * .95); fgc = Math.max(fgc, def.g * .95); fb = Math.max(fb, def.b * .95); }
         if (layer === LAYER.actor) {

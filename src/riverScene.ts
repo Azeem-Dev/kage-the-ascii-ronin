@@ -51,6 +51,8 @@ export function startRiverScene(): void {
   const wildlife = new Wildlife(1337);
   const BURNABLE = new Set(['hovel', 'cottage', 'townhouse', 'manor', 'tavern', 'tent', 'market-stall', 'haystack', 'cart']);
   const TREE_IDS = new Set(['pine', 'oak', 'willow', 'birch', 'cypress', 'cherry', 'dead-tree']);
+  const GIANT_TREES = new Set(['oak', 'willow', 'birch', 'cypress', 'cherry', 'dead-tree']);
+  const TALL_PROPS = new Set(['lamp-post', 'banner']);
   const baseId = (id: string) => id.replace(/^iso-/, '');
   /** Fire footprint from the building's drawn size (2D sprite heights include the roof). */
   const fireFor = (i: { id: string; x: number; y: number; scale: number; asset: AsciiAsset }): Fire => {
@@ -267,12 +269,12 @@ export function startRiverScene(): void {
     const mix = (night: number, day: number) => night + (day - night) * d;
     const angle = atmosphere.daylight * Math.PI * 2;
     renderer.lighting = {
-      ambient: [mix(.36, .8) + dusk * .1, mix(.44, .82) + dusk * .02, mix(.7, .8) - dusk * .08],
-      sun: mix(.18, .62),
+      ambient: [mix(.24, .58) + dusk * .1, mix(.28, .6) + dusk * .02, mix(.48, .62) - dusk * .08],
+      sun: mix(.22, .68),
       sunColor: d > .5 ? [1, .94 - dusk * .15, .82 - dusk * .3] : [.55, .68, 1],
       shadowX: Math.cos(angle) * (d > .5 ? .7 : -.5),
       shadowY: .16 + (1 - Math.abs(Math.cos(angle))) * .12,
-      saturation: .9 + d * .12,
+      saturation: .92 + d * .12,
     };
     weather.tint(renderer.lighting);
   }
@@ -291,10 +293,12 @@ export function startRiverScene(): void {
         const iso = ISO ? ISO_BUILDINGS[prop.assetId] : undefined;
         if (iso) {
           const spec = HOUSE_SPECS[prop.assetId];
-          const scale = spec && prop.id.startsWith('town-') ? 1.18 : 1;
+          const scale = spec ? (prop.id.startsWith('town-') ? 1.15 : 1) : prop.assetId === 'market-stall' ? .72 : .85;
           return [{ ...prop, asset: iso, scale, y: spec?.shiftBack ? prop.y - spec.b * .92 * scale : prop.y }];
         }
-        return [{ ...prop, asset }];
+        // Keep oversized 300-cell trees and 230-cell lamp/banner poles proportional to the 41-cell hero.
+        const scale = GIANT_TREES.has(prop.assetId) ? prop.scale * .40 : TALL_PROPS.has(prop.assetId) ? prop.scale * .44 : prop.scale;
+        return [{ ...prop, asset, scale }];
       });
       colliders = instances.flatMap(collidersFor);
       lanterns = instances.filter(instance => instance.asset.id === 'lantern' || instance.asset.light);
@@ -411,7 +415,7 @@ export function startRiverScene(): void {
             const sb = (houseSpec.a + houseSpec.b) * instance.scale * .3;
             shadow(ids, instance.x + renderer.lighting.shadowX * 14, instance.y + renderer.lighting.shadowY * 14, sa, sb);
           } else {
-            shadow(ids, instance.x + 3, instance.y + 1, isTree ? 18 : 10, isTree ? 4.5 : 3);
+            shadow(ids, instance.x + 3, instance.y + 1, isTree ? 12 : 8, isTree ? 3.5 : 2.5);
           }
         }
         const compiled = sprite(instance.asset, { time: flying ? time + instance.seed % 5 : 0, seed: instance.seed, variant: instance.variant, action: 'idle', facing: 'right' }, instance.scale / detailStep, flying);

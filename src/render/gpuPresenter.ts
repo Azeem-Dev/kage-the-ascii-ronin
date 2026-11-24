@@ -123,7 +123,7 @@ export class GpuPresenter {
     this.composer = new EffectComposer(this.renderer);
     this.composer.addPass(new RenderPass(this.scene, this.camera));
     // Only genuinely bright cells (fire, lamps, lit windows, glints, rim light) glow.
-    this.bloom = new UnrealBloomPass(new THREE.Vector2(1, 1), .55, .5, .42);
+    this.bloom = new UnrealBloomPass(new THREE.Vector2(1, 1), .28, .4, .78);
     this.composer.addPass(this.bloom);
     this.composer.addPass(new OutputPass());
   }

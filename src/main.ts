@@ -222,7 +222,7 @@ function bootstrap(): void {
 window.addEventListener('DOMContentLoaded', () => {
   const mode = new URLSearchParams(window.location.search).get('mode');
   if (mode === 'game') bootstrap();
-  // Three.js is loaded only for the 3D prototype, so the 2D game stays light.
-  else if (mode === '3d') void import('./three/game3d.ts').then(m => m.start3d());
-  else startRiverScene();
+  // The 2D canvas game is kept at ?mode=2d; the 3D game is now the default.
+  else if (mode === '2d') startRiverScene();
+  else void import('./three/game3d.ts').then(m => m.start3d());
 });

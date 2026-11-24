@@ -28,7 +28,7 @@ export class AsciiPass {
         grid: { value: new THREE.Vector2(1, 1) },
         glyphCount: { value: RAMP.length },
         atlasCount: { value: ATLAS.length },
-        exposure: { value: 1.7 },
+        exposure: { value: 1.9 },
       },
       vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0., 1.); }',
       fragmentShader: `
@@ -42,14 +42,18 @@ export class AsciiPass {
           vec2 local = fract(vUv * grid);
           vec3 c = sceneAt(cell);
           float lum = L(c);
-          // Glyph by brightness; a slight curve keeps mid-tones textured.
-          float g = clamp(floor(pow(lum, .8) * glyphCount * 1.2), 0., glyphCount - 1.);
+          // Grade like the references: shadows go cool and grey, only lit things stay saturated.
+          float sat = mix(.85, 1.2, smoothstep(.2, .65, lum));
+          c = mix(vec3(lum), c, sat);
+          c = mix(c, c * vec3(.85, .97, 1.1), (1. - smoothstep(.15, .6, lum)) * .3);
+          // Dark cells stay empty: negative space carries the picture.
+          float g = lum < .045 ? 0. : clamp(floor(smoothstep(.03, .75, lum) * glyphCount), 1., glyphCount - 1.);
           // Silhouette and facet edges become line glyphs oriented along the edge.
           float gx = L(sceneAt(cell + vec2(1., 0.))) - L(sceneAt(cell - vec2(1., 0.)));
           float gy = L(sceneAt(cell + vec2(0., 1.))) - L(sceneAt(cell - vec2(0., 1.)));
           float edge = length(vec2(gx, gy));
           float boost = 1.;
-          if (edge > .11) {
+          if (edge > .11 && lum > .07) {
             float a = mod(atan(gy, gx) + 3.14159265 / 8., 3.14159265); // edge normal angle
             // Normal angle -> the glyph that runs along the edge.
             float dir = floor(a / (3.14159265 / 4.));
@@ -58,8 +62,10 @@ export class AsciiPass {
           }
           float mask = texture2D(tGlyphs, vec2((g + local.x) / atlasCount, local.y)).r;
           // Keep hue, lift brightness so lit glyphs read strongly against the dark.
-          vec3 ink = c / max(lum, .04) * clamp((lum * 1.7 + .14) * boost, 0., 1.35);
-          vec3 back = c * .08;
+          vec3 ink = c / max(lum, .04) * clamp((lum * 1.45 + .06) * boost, 0., 1.35);
+          // Each cell's background is a dim fill of its own colour: shapes and
+          // colour fields survive even where the glyph is sparse.
+          vec3 back = vec3(.01, .016, .026) + c * .32;
           gl_FragColor = vec4(mix(back, ink, mask), 1.);
         }`,
       depthTest: false, depthWrite: false,
@@ -85,7 +91,7 @@ export class AsciiPass {
   resize(width: number, height: number, _pixelRatio: number): void {
     // Phones get slightly larger cells so glyphs stay legible.
     const coarse = Math.min(width, height) < 600;
-    this.cellWidth = coarse ? 6 : 7; this.cellHeight = coarse ? 10 : 12;
+    this.cellWidth = coarse ? 5 : 6; this.cellHeight = coarse ? 9 : 10;
     this.cols = Math.ceil(width / this.cellWidth); this.rows = Math.ceil(height / this.cellHeight);
     this.target.setSize(this.cols * 2, this.rows * 2);
     (this.material.uniforms.grid.value as THREE.Vector2).set(this.cols, this.rows);

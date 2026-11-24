@@ -10,6 +10,7 @@ import { collidersFor } from '../game/colliders.ts';
 import { LANDMARKS, regionAt } from '../game/landmarks.ts';
 import { CHUNK_SIZE, generateChunk, type WorldProp } from '../game/worldChunks.ts';
 import { AsciiPass } from './asciiPass.ts';
+import { Grass, WaterSparkles } from './nature3d.ts';
 import { buildHorse, buildSamurai, type Rig } from './characters3d.ts';
 
 /*
@@ -172,8 +173,9 @@ export function start3d(): void {
 
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0x05080d);
-  scene.fog = new THREE.Fog(0x0a1018, 700, 1500);
-  const camera = new THREE.PerspectiveCamera(34, 1, 5, 3000);
+  // Depth fog: distant land fades into the night, which sells the 3D.
+  scene.fog = new THREE.Fog(0x070c14, 260, 900);
+  const camera = new THREE.PerspectiveCamera(42, 1, 5, 3000);
   const hemi = new THREE.HemisphereLight(0x5a7099, 0x14180c, .9);
   scene.add(hemi);
   const sun = new THREE.DirectionalLight(0xaabfff, 2.2);
@@ -191,7 +193,7 @@ export function start3d(): void {
   terrain.receiveShadow = true;
   scene.add(terrain);
   const basePositions = Float32Array.from(terrainGeometry.attributes.position.array as Float32Array);
-  const water = new THREE.Mesh(new THREE.PlaneGeometry(TERRAIN_SIZE, TERRAIN_SIZE), new THREE.MeshStandardMaterial({ color: 0x0c2433, roughness: .15, metalness: .3, transparent: true, opacity: .88 }));
+  const water = new THREE.Mesh(new THREE.PlaneGeometry(TERRAIN_SIZE, TERRAIN_SIZE), new THREE.MeshStandardMaterial({ color: 0x050d16, roughness: .2, metalness: .2, transparent: true, opacity: .94 }));
   water.rotation.x = -Math.PI / 2; water.receiveShadow = true;
   scene.add(water);
   const tmp = new THREE.Color();
@@ -202,7 +204,8 @@ export function start3d(): void {
       const x = basePositions[i * 3] + cx; const z = basePositions[i * 3 + 2] + cz;
       pos.setXYZ(i, x, groundHeight(x, z), z);
       tmp.setHex(GROUND_COLORS[groundAt(x, z)] ?? 0x3f6b2c);
-      const v = .82 + noise(Math.floor(x / 7), Math.floor(z / 7), 41) * .36;
+      // Ground stays dark so grass blades, props and people carry the picture.
+      const v = (.82 + noise(Math.floor(x / 7), Math.floor(z / 7), 41) * .36) * .5;
       col.setXYZ(i, tmp.r * v, tmp.g * v, tmp.b * v);
     }
     pos.needsUpdate = true; col.needsUpdate = true;
@@ -210,6 +213,12 @@ export function start3d(): void {
     terrainGeometry.computeBoundingSphere();
     water.position.set(cx, -1.4, cz);
   }
+
+  const mobile = matchMedia('(pointer: coarse)').matches;
+  const grass = new Grass(mobile ? 30000 : 110000, mobile ? 220 : 330, mobile ? 2.8 : 2, groundHeight);
+  scene.add(grass.mesh);
+  const sparkles = new WaterSparkles(mobile ? 500 : 1400);
+  scene.add(sparkles.points);
 
   // Props from the same deterministic chunks and landmarks as the 2D game.
   const props = new Map<string, PlacedProp>();
@@ -261,7 +270,7 @@ export function start3d(): void {
     if (jump) { hero.x = jump.spawnX; hero.y = jump.spawnY; horseBody.x = hero.x + 27; horseBody.y = hero.y + 16; mounted = false; }
   });
   addEventListener('keyup', e => keys.delete(e.code));
-  let distance = 340;
+  let distance = 230; let yaw = 0;
   renderer.domElement.addEventListener('wheel', e => { e.preventDefault(); distance = Math.min(1100, Math.max(140, distance * (1 + e.deltaY * .001))); }, { passive: false });
   function toggleMount(): void {
     if (mounted) { mounted = false; horseBody.x = hero.x + 14; horseBody.y = hero.y; hero.x -= 12; return; }
@@ -302,6 +311,7 @@ export function start3d(): void {
   addEventListener('resize', resize); resize();
 
   let centre = { x: Infinity, z: Infinity };
+  let grassCentre = { x: Infinity, z: Infinity };
   let last = performance.now(); let frames = 0; let fps = 0; let fpsTime = last; let time = 0;
   function tick(now: number): void {
     const dt = Math.min(.05, (now - last) / 1000); last = now; time += dt;
@@ -310,9 +320,19 @@ export function start3d(): void {
       buildTerrain(centre.x, centre.z);
       updateProps(centre.x, centre.z);
     }
+    // Grass follows more tightly than terrain (smaller radius), on its own snapped centre.
+    if (Math.hypot(hero.x - grassCentre.x, hero.y - grassCentre.z) > 90) {
+      grassCentre = { x: Math.round(hero.x / 16) * 16, z: Math.round(hero.y / 16) * 16 };
+      grass.rebuild(grassCentre.x, grassCentre.z);
+    }
+    grass.update(time);
+    sparkles.update(time, hero.x, hero.y, 700);
     // Movement uses the shared 2D physics (circle colliders, sliding).
-    let mx = Number(keys.has('KeyD') || keys.has('ArrowRight')) - Number(keys.has('KeyA') || keys.has('ArrowLeft')) + stick.x;
-    let my = Number(keys.has('KeyS') || keys.has('ArrowDown')) - Number(keys.has('KeyW') || keys.has('ArrowUp')) + stick.y;
+    const ix = Number(keys.has('KeyD') || keys.has('ArrowRight')) - Number(keys.has('KeyA') || keys.has('ArrowLeft')) + stick.x;
+    const iy = Number(keys.has('KeyS') || keys.has('ArrowDown')) - Number(keys.has('KeyW') || keys.has('ArrowUp')) + stick.y;
+    // Input is relative to the camera's orbit so "up" always walks away from the camera.
+    const mx = ix * Math.cos(yaw) + iy * Math.sin(yaw);
+    const my = -ix * Math.sin(yaw) + iy * Math.cos(yaw);
     const run = keys.has('ShiftLeft') || keys.has('ShiftRight') || Math.hypot(stick.x, stick.y) > .9;
     const e = CONFIG.exploration;
     const speed = (mounted ? run ? e.gallopSpeed : e.rideSpeed : run ? e.runSpeed : e.walkSpeed) * (waterDepth(hero.x, hero.y) > 0 ? .55 : 1);
@@ -335,7 +355,9 @@ export function start3d(): void {
 
     // Camera: high three-quarter view looking down, like the references.
     const target = new THREE.Vector3(hero.x, hy + 12, hero.y);
-    camera.position.set(target.x, target.y + distance * .93, target.z + distance * .37);
+    // Lower, cinematic angle (about 40 degrees) so height and sides of things show; Q/R orbit.
+    yaw += (Number(keys.has('KeyR')) - Number(keys.has('KeyQ'))) * dt * 1.6;
+    camera.position.set(target.x + Math.sin(yaw) * distance * .76, target.y + distance * .64, target.z + Math.cos(yaw) * distance * .76);
     camera.lookAt(target);
 
     // Moonlight or daylight; the light follows the player so shadows stay sharp.
@@ -356,7 +378,7 @@ export function start3d(): void {
     ascii.render(scene, camera);
     frames++;
     if (now - fpsTime > 500) { fps = Math.round(frames * 1000 / (now - fpsTime)); frames = 0; fpsTime = now; }
-    hud.textContent = `KAGE  ·  3D PROTOTYPE\n${regionAt(hero.x, hero.y).toUpperCase()}\n${fps} FPS  ${ascii.cols}×${ascii.rows}\n\nWASD move  SHIFT run  E ride  N day/night  WHEEL zoom  1–0 regions`;
+    hud.textContent = `KAGE  ·  3D PROTOTYPE\n${regionAt(hero.x, hero.y).toUpperCase()}\n${fps} FPS  ${ascii.cols}×${ascii.rows}\n\nWASD move  SHIFT run  E ride  N day/night  Q/R turn camera  WHEEL zoom  1–0 regions`;
     renderer.domElement.dataset.fps = String(fps);
     requestAnimationFrame(tick);
   }

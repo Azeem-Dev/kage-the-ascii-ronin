@@ -74,7 +74,9 @@ rendered through a GPU ASCII shader), shipped to web via Vite and to iOS/Android
 **Capacitor**. This replaces the "No WebGL" rule below. Keep: terrain sampling, world
 chunks/regions, colliders and `src/engine/` physics (already x/y/z). Replace: the
 renderer and 2D glyph sprites (characters become low-poly models or billboards).
-Build it first as a prototype behind `?mode=3d`; the 2D game stays until the owner switches.
+**The 3D game is now the default at `/`** (`src/three/`: `game3d.ts` scene/loop,
+`asciiPass.ts` ASCII shader, `characters3d.ts` Kage + Tsuki, `nature3d.ts` grass + water).
+`?raw=1` shows the plain 3D render for debugging; the old 2D game is at `?mode=2d`.
 Mobile: touch controls (joystick / tap-to-move), quality levels, 30–60 FPS on mid phones.
 Story and hero (a samurai): `docs/STORY.md`.
 

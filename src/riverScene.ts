@@ -40,6 +40,8 @@ export function startRiverScene(): void {
   let detailStep = 1;
   let cols = 0; let rows = 0;
   let cameraX = 0; let cameraY = 0;
+  let lastCameraX = NaN; let lastCameraY = NaN;
+  let lastCols = 0; let lastRows = 0; let lastDetailStep = 0;
   let time = 0; let paused = false; let last = performance.now();
   let target: { x: number; y: number } | null = null;
   let rippleTimer = 0;
@@ -226,7 +228,12 @@ export function startRiverScene(): void {
     for (const lamp of instances.filter(instance => instance.asset.id === 'lantern')) renderer.illuminate(ids, cols, rows, (lamp.x - cameraX) / detailStep, (lamp.y - 6 - cameraY) / detailStep, 23 / detailStep, true);
     const generationEnd = performance.now();
     atmosphere.render(ids, cols, rows, cameraX, cameraY, detailStep, time);
-    renderer.present(ctx, ids, cols, rows);
+    const canScroll = lastCols === cols && lastRows === rows && lastDetailStep === detailStep && Number.isFinite(lastCameraX);
+    const scrollX = canScroll ? -Math.round((cameraX - lastCameraX) / detailStep) : 0;
+    const scrollY = canScroll ? -Math.round((cameraY - lastCameraY) / detailStep) : 0;
+    renderer.present(ctx, ids, cols, rows, scrollX, scrollY);
+    lastCameraX = cameraX; lastCameraY = cameraY;
+    lastCols = cols; lastRows = rows; lastDetailStep = detailStep;
     canvas.style.filter = `brightness(${atmosphere.brightness.toFixed(2)}) saturate(1.18)`;
     canvas.dataset.generateMs = (generationEnd - renderStart).toFixed(1);
     canvas.dataset.terrainMs = (terrainEnd - renderStart).toFixed(1);

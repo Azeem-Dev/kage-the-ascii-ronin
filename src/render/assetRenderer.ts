@@ -16,11 +16,17 @@ export class AssetRenderer {
   private definitions: { glyph: string; color: string }[] = [{ glyph: ' ', color: '#070b10' }];
   private lit = new Map<string, number>();
   private previous = new Uint32Array(0);
+  private previousCols = 0;
+  private previousRows = 0;
+  private previousCellWidth = 0;
+  private previousCellHeight = 0;
   private working = new Uint32Array(0);
   private output: ImageData | null = null;
   private outputPixels = new Uint32Array(0);
+  private dirtyTiles = new Uint8Array(0);
   private rasterCanvas: HTMLCanvasElement | null = null;
   private rasterContext: CanvasRenderingContext2D | null = null;
+  private scrollCanvas: HTMLCanvasElement | null = null;
   changedCells = 0;
   constructor(public cellWidth = 4, public cellHeight = 6) {
     const empty = new Uint32Array(cellWidth * cellHeight);
@@ -120,26 +126,146 @@ export class AssetRenderer {
     }
   }
 
-  present(ctx: CanvasRenderingContext2D, ids: Uint32Array, cols: number, rows: number): void {
+  private shift2D(
+    buffer: Uint32Array,
+    width: number,
+    height: number,
+    dx: number,
+    dy: number,
+    fill: number
+  ): void {
+    if (dx === 0 && dy === 0) return;
+    if (Math.abs(dx) >= width || Math.abs(dy) >= height) {
+      buffer.fill(fill);
+      return;
+    }
+
+    if (dy > 0) {
+      buffer.copyWithin(dy * width, 0, (height - dy) * width);
+      buffer.fill(fill, 0, dy * width);
+    } else if (dy < 0) {
+      buffer.copyWithin(0, -dy * width, height * width);
+      buffer.fill(fill, (height + dy) * width, height * width);
+    }
+
+    for (let row = 0; row < height; row++) {
+      const start = row * width;
+      if (dx > 0) {
+        buffer.copyWithin(start + dx, start, start + width - dx);
+        buffer.fill(fill, start, start + dx);
+      } else if (dx < 0) {
+        buffer.copyWithin(start, start - dx, start + width);
+        buffer.fill(fill, start + width + dx, start + width);
+      }
+    }
+  }
+
+  private scrollDisplayedCanvas(
+    ctx: CanvasRenderingContext2D,
+    width: number,
+    height: number,
+    dx: number,
+    dy: number
+  ): void {
+    if (dx === 0 && dy === 0) return;
+    if (!this.scrollCanvas) this.scrollCanvas = document.createElement('canvas');
+    if (this.scrollCanvas.width !== width || this.scrollCanvas.height !== height) {
+      this.scrollCanvas.width = width;
+      this.scrollCanvas.height = height;
+    }
+    const scrollCtx = this.scrollCanvas.getContext('2d', { alpha: false });
+    if (!scrollCtx) return;
+    scrollCtx.imageSmoothingEnabled = false;
+    scrollCtx.drawImage(ctx.canvas, 0, 0);
+    ctx.save();
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.globalAlpha = 1;
+    ctx.imageSmoothingEnabled = false;
+    ctx.fillStyle = '#070b10';
+    ctx.fillRect(0, 0, width, height);
+    ctx.drawImage(this.scrollCanvas, dx, dy);
+    ctx.restore();
+  }
+
+  present(
+    ctx: CanvasRenderingContext2D,
+    ids: Uint32Array,
+    cols: number,
+    rows: number,
+    scrollX = 0,
+    scrollY = 0
+  ): void {
     const width = cols * this.cellWidth; const height = rows * this.cellHeight;
     const resized = !this.output || this.output.width !== width || this.output.height !== height;
+    const tileSize = 64;
+    const tileCols = Math.ceil(cols / tileSize);
+    const tileRows = Math.ceil(rows / tileSize);
+    if (this.dirtyTiles.length !== tileCols * tileRows) this.dirtyTiles = new Uint8Array(tileCols * tileRows);
+    let fullRedraw = resized;
+
     if (resized) {
       this.output = ctx.createImageData(width, height);
       this.outputPixels = new Uint32Array(this.output.data.buffer);
       this.previous = new Uint32Array(ids.length); this.previous.fill(0xffffffff);
+      this.previousCols = cols; this.previousRows = rows;
+      this.previousCellWidth = this.cellWidth; this.previousCellHeight = this.cellHeight;
+    } else {
+      const canScroll = this.previous.length === ids.length &&
+        this.previousCols === cols && this.previousRows === rows &&
+        this.previousCellWidth === this.cellWidth && this.previousCellHeight === this.cellHeight;
+      if (canScroll) {
+        this.shift2D(this.previous, cols, rows, scrollX, scrollY, 0xffffffff);
+        this.shift2D(
+          this.outputPixels,
+          width,
+          height,
+          scrollX * this.cellWidth,
+          scrollY * this.cellHeight,
+          0xff100b07
+        );
+        this.scrollDisplayedCanvas(
+          ctx,
+          width,
+          height,
+          scrollX * this.cellWidth,
+          scrollY * this.cellHeight
+        );
+      } else {
+        fullRedraw = true;
+        this.previous.fill(0xffffffff);
+        this.outputPixels.fill(0xff100b07);
+      }
     }
+    this.dirtyTiles.fill(fullRedraw ? 1 : 0);
     this.changedCells = 0;
     for (let i = 0; i < ids.length; i++) {
       const id = ids[i];
       if (this.previous[i] === id) continue;
       this.previous[i] = id; this.changedCells++;
+      const cellX = i % cols;
+      const cellY = Math.floor(i / cols);
+      this.dirtyTiles[Math.floor(cellY / tileSize) * tileCols + Math.floor(cellX / tileSize)] = 1;
+      const dx = cellX * this.cellWidth; const dy = cellY * this.cellHeight;
       const tile = this.tile(id);
-      const dx = i % cols * this.cellWidth; const dy = Math.floor(i / cols) * this.cellHeight;
       for (let y = 0; y < this.cellHeight; y++) {
         const dst = (dy + y) * width + dx; const src = y * this.cellWidth;
         for (let x = 0; x < this.cellWidth; x++) this.outputPixels[dst + x] = tile[src + x];
       }
     }
-    if (this.changedCells && this.output) ctx.putImageData(this.output, 0, 0);
+    if (!this.changedCells || !this.output) return;
+    if (fullRedraw) {
+      ctx.putImageData(this.output, 0, 0);
+      return;
+    }
+    for (let ty = 0; ty < tileRows; ty++) {
+      for (let tx = 0; tx < tileCols; tx++) {
+        if (!this.dirtyTiles[ty * tileCols + tx]) continue;
+        const dirtyX = tx * tileSize * this.cellWidth;
+        const dirtyY = ty * tileSize * this.cellHeight;
+        const dirtyW = Math.min(tileSize, cols - tx * tileSize) * this.cellWidth;
+        const dirtyH = Math.min(tileSize, rows - ty * tileSize) * this.cellHeight;
+        ctx.putImageData(this.output, 0, 0, dirtyX, dirtyY, dirtyW, dirtyH);
+      }
+    }
   }
 }

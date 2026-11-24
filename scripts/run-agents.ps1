@@ -46,7 +46,7 @@ foreach ($agent in $Agents) {
   if (-not $brief) { Write-Host "Unknown agent $agent (use A, B, C, D)" -ForegroundColor Red; continue }
   $letter = $agent.ToUpper()
   $prompt = "You are Agent $letter on the KAGE project. Read artifacts/agents/README.md and artifacts/agents/$brief completely, then do that task end to end. " +
-            "Edit only the files your brief allows. Run npm test and npx tsc --noEmit -p . until both pass. " +
+            "A previous agent may have started this task: review any existing work in your files, keep what is good and finish it. Edit only the files your brief allows. Run npm test and npx tsc --noEmit -p . until both pass. " +
             "Finish by writing artifacts/agents/$letter-handoff.md as the brief describes. Do not commit; Claude reviews first."
   $log = Join-Path $logs "$letter.log"
   $command = "Set-Location '$root'; `$host.UI.RawUI.WindowTitle = 'KAGE Agent $letter'; " +

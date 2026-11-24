@@ -16,6 +16,7 @@ import { CONFIG } from './config.ts';
 import { moveBody, type Collider } from './engine/physics.ts';
 import { collidersFor } from './game/colliders.ts';
 import { Atmosphere } from './game/atmosphere.ts';
+import { Weather, type Fire } from './game/weather.ts';
 import './riverScene.css';
 
 interface Instance { id: string; asset: AsciiAsset; x: number; y: number; seed: number; scale: number; variant: number }
@@ -43,7 +44,12 @@ export function startRiverScene(): void {
     } catch (error) { console.warn('WebGL unavailable, using CPU renderer', error); gpu = null; }
   }
   const atmosphere = new Atmosphere(renderer);
-  const keys = new Set<string>();
+  const weather = new Weather(renderer);
+  const BURNABLE = new Set(['hovel', 'cottage', 'townhouse', 'manor', 'tavern', 'tent', 'market-stall', 'haystack', 'cart']);
+  /** Fire footprint from the building's drawn size (2D sprite heights include the roof). */
+  const fireFor = (i: { id: string; x: number; y: number; scale: number; asset: AsciiAsset }): Fire =>
+    ({ id: i.id, x: i.x, y: i.y, width: i.asset.width * i.scale * .75, height: i.asset.height * i.scale * .8 });
+  let mudgateLit = false;  const keys = new Set<string>();
   const playable = [RONIN, ...CHARACTERS];
   let playerIndex = 0;
   const hero = { x: riverCenter(230) + 69, y: 230, vx: 0, vy: 0, facing: 'right' as 'left' | 'right', moving: false, variant: 0 };
@@ -168,11 +174,11 @@ export function startRiverScene(): void {
     mapCtx.fillRect(MAP_W / 2 + (hero.facing === 'right' ? 2 : -3), MAP_H / 2, 1, 1);
   }
   const toggleWeather = (code: string) => {
-    if (code === 'KeyT') atmosphere.rain = (atmosphere.rain + 1) % 3;
+    if (code === 'KeyT') weather.cycle();
     if (code === 'KeyL') atmosphere.insects = !atmosphere.insects;
     if (code === 'KeyN') { atmosphere.daylight = atmosphere.brightness > 1.1 ? .75 : .2; atmosphere.cycle = false; }
     if (code === 'KeyC') atmosphere.cycle = !atmosphere.cycle;
-    document.getElementById('toggle-rain')!.textContent = `Rain: ${['off', 'light', 'storm'][atmosphere.rain]} [T]`;
+    document.getElementById('toggle-rain')!.textContent = `Weather: ${weather.mode} [T]`;
     document.getElementById('toggle-insects')!.textContent = `Insects: ${atmosphere.insects ? 'on' : 'off'} [L]`;
     document.getElementById('toggle-cycle')!.textContent = `Cycle: ${atmosphere.cycle ? 'on' : 'off'} [C]`;
   };
@@ -189,6 +195,11 @@ export function startRiverScene(): void {
     const destination = LANDMARKS.find(area => area.key === event.code);
     if (destination) { hero.x = destination.spawnX; hero.y = destination.spawnY; hero.vx = 0; hero.vy = 0; horse.x = hero.x + 27; horse.y = hero.y + 16; target = null; mounted = false; }
     if (event.code === 'KeyP' || event.code === 'Escape') setPaused(!paused);
+    if (event.code === 'KeyB') {
+      // Set the nearest building alight (or put it out).
+      const near = instances.filter(i => BURNABLE.has(i.asset.id)).sort((a, b) => Math.hypot(a.x - hero.x, a.y - hero.y) - Math.hypot(b.x - hero.x, b.y - hero.y))[0];
+      if (near && Math.hypot(near.x - hero.x, near.y - hero.y) < 160) weather.toggleFire(fireFor(near));
+    }
     if (event.code === 'KeyV') hero.variant = (hero.variant + 1) % playable[playerIndex].variants.length;
     if (event.code === 'KeyH') { playerIndex = (playerIndex + 1) % playable.length; hero.variant = 0; }
     if (event.code === 'KeyE' && !paused) {
@@ -239,6 +250,7 @@ export function startRiverScene(): void {
       shadowY: .16 + (1 - Math.abs(Math.cos(angle))) * .12,
       saturation: .9 + d * .12,
     };
+    weather.tint(renderer.lighting);
   }
   function tick(now: number): void {
     if (!ctx) return;
@@ -255,6 +267,9 @@ export function startRiverScene(): void {
       colliders = instances.flatMap(collidersFor);
       lanterns = instances.filter(instance => instance.asset.id === 'lantern' || instance.asset.light);
       riverRocks = instances.filter(instance => instance.asset === ROCK && waterDepth(instance.x, instance.y) > 0);
+      // Story set-piece: one Mudgate hovel is already burning when you arrive.
+      const hovel = mudgateLit ? undefined : instances.find(instance => instance.id === 'mud-hovel-2');
+      if (hovel) { weather.toggleFire(fireFor(hovel)); mudgateLit = true; }
     }
     const dt = Math.min(.05, (now - last) / 1000); last = now;
     if (!paused) {
@@ -355,13 +370,19 @@ export function startRiverScene(): void {
       renderer.addLight(cols, rows, (lamp.x + light.x * lamp.scale - cameraX) / detailStep, (lamp.y + light.y * lamp.scale - cameraY) / detailStep, light.radius * lamp.scale * (.7 + night * .5) / detailStep, r * glow, g * glow, b * glow);
     }
     if (night > .35) renderer.addLight(cols, rows, (hero.x - cameraX) / detailStep, (hero.y - 18 - cameraY) / detailStep, 46 / detailStep, .35 * night, .3 * night, .22 * night);
+    // Firelight from burning buildings.
+    for (const fl of weather.lights(time)) renderer.addLight(cols, rows, (fl.x - cameraX) / detailStep, (fl.y - cameraY) / detailStep, fl.radius / detailStep, 1.15 * fl.strength, .55 * fl.strength, .2 * fl.strength);
     const generationEnd = performance.now();
+    atmosphere.rain = 0; // replaced by particle weather
     atmosphere.render(ids, cols, rows, cameraX, cameraY, detailStep, time);
+    if (!paused) weather.update(dt, cameraX, cameraY, cols * detailStep, rows * detailStep);
+    weather.draw(ids, renderer.layers, cols, rows, cameraX, cameraY, detailStep);
     canvas.dataset.atmosMs = (performance.now() - generationEnd).toFixed(1);
     const canScroll = lastCols === cols && lastRows === rows && lastDetailStep === detailStep && Number.isFinite(lastCameraX);
     const scrollX = canScroll ? -Math.round((cameraX - lastCameraX) / detailStep) : 0;
     const scrollY = canScroll ? -Math.round((cameraY - lastCameraY) / detailStep) : 0;
-    if (gpu) { renderer.prepare(ids, cols, rows); gpu.present(renderer, cols, rows, terrain.waterMask, time, 1 - dayFactor()); }
+    if (gpu) { renderer.prepare(ids, cols, rows); gpu.present(renderer, cols, rows, terrain.waterMask, time, 1 - dayFactor(),
+      { snowCover: weather.snowCover, flash: weather.flash, camCellX: cameraX / detailStep, camCellY: cameraY / detailStep }); }
     else renderer.present(ctx, ids, cols, rows, scrollX, scrollY);
     lastCameraX = cameraX; lastCameraY = cameraY;
     lastCols = cols; lastRows = rows; lastDetailStep = detailStep;
@@ -388,6 +409,9 @@ export function startRiverScene(): void {
       canvas.dataset.zoom = zoom.toFixed(2);
       canvas.dataset.mounted = String(mounted);
       canvas.dataset.rain = String(atmosphere.rain);
+      canvas.dataset.weather = weather.mode;
+      canvas.dataset.particles = String(weather.particleCount);
+      canvas.dataset.fires = weather.fires.map(f => `${f.id}@${Math.round(f.x)},${Math.round(f.y)}`).join(' ');
       canvas.dataset.footsteps = String(footsteps.length);
       canvas.dataset.actorMoving = String(hero.moving);
       canvas.dataset.playerAsset = playable[playerIndex].id;

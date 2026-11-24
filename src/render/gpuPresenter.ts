@@ -41,12 +41,14 @@ export class GpuPresenter {
         tFg: { value: null }, tBg: { value: null }, tAtlas: { value: null }, tInfo: { value: null },
         time: { value: 0 }, night: { value: 0 }, moonX: { value: .68 },
         debugWater: { value: new URLSearchParams(location.search).get('debug') === 'water' ? 1 : 0 },
+        snowCover: { value: 0 }, flash: { value: 0 }, camCell: { value: new THREE.Vector2() },
         grid: { value: new THREE.Vector2(1, 1) }, atlasGrid: { value: new THREE.Vector2(ATLAS_COLUMNS, 1) },
       },
       vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0., 1.); }',
       fragmentShader: `
         uniform sampler2D tFg; uniform sampler2D tBg; uniform sampler2D tAtlas; uniform sampler2D tInfo; uniform vec2 grid; uniform vec2 atlasGrid;
         uniform float time; uniform float night; uniform float moonX; uniform float debugWater;
+        uniform float snowCover; uniform float flash; uniform vec2 camCell;
         varying vec2 vUv;
         float glyphMask(vec4 f, vec4 b, vec2 local){
           float index = floor(f.a * 255. + .5) + floor(b.a * 255. + .5) * 256.;
@@ -95,6 +97,20 @@ export class GpuPresenter {
             srgb += vec3(.62, .68, .8) * glint * band * night * .9;
             srgb += vec3(.05, .07, .11) * band * night;
           }
+          // Snow settles in world-anchored patches on the ground and on the tops of props (roofs).
+          if (snowCover > .01 && info.g < .5) {
+            float n = hash(cell + camCell);
+            float lumHere = dot(srgb, vec3(.299, .587, .114));
+            vec3 snowColor = vec3(.78, .84, .94) * (.75 + lumHere);
+            if (layer < .5 && n < snowCover * 1.1) srgb = mix(srgb, snowColor, .55 + .35 * mask);
+            else if (layer > 1.5 && layer < 2.5) {
+              float above = layerAt(cell - vec2(0., 1.)); float above2 = layerAt(cell - vec2(0., 2.));
+              if (above < 1.5 || above > 2.5) srgb = mix(srgb, snowColor * 1.1, snowCover * .9);
+              else if (above2 < 1.5 || above2 > 2.5) srgb = mix(srgb, snowColor, snowCover * .5);
+            }
+          }
+          // Lightning lights everything for an instant, strongest on what was already lit.
+          srgb += flash * vec3(.5, .55, .68) * (.25 + dot(srgb, vec3(.333)));
           gl_FragColor = vec4(pow(srgb, vec3(2.2)), 1.);   // linear for bloom; OutputPass re-encodes
         }`,
       depthTest: false, depthWrite: false,
@@ -137,7 +153,10 @@ export class GpuPresenter {
    * @param water 1 per river cell (TerrainLayer.waterMask), same layout as the cell grid.
    * @param night 0 = full day, 1 = full night (drives the moon path).
    */
-  present(source: AssetRenderer, cols: number, rows: number, water: Uint8Array, time: number, night: number): void {
+  present(source: AssetRenderer, cols: number, rows: number, water: Uint8Array, time: number, night: number,
+    fx: { snowCover: number; flash: number; camCellX: number; camCellY: number } = { snowCover: 0, flash: 0, camCellX: 0, camCellY: 0 }): void {
+    this.material.uniforms.snowCover.value = fx.snowCover; this.material.uniforms.flash.value = fx.flash;
+    (this.material.uniforms.camCell.value as THREE.Vector2).set(fx.camCellX, fx.camCellY);
     const width = cols * source.cellWidth; const height = rows * source.cellHeight;
     if (!(width > 0 && height > 0)) return;
     if (width !== this.width || height !== this.height) {

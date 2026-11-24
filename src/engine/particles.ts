@@ -2,9 +2,9 @@
 // World is top-down: x right, y down the screen, z = height. Draw at screen (x, y - z).
 import type { WindLike, WindSample } from './wind.ts';
 
-export const ParticleKind = { dust: 0, leaf: 1, spark: 2, splash: 3, rain: 4, smoke: 5 } as const;
+export const ParticleKind = { dust: 0, leaf: 1, spark: 2, splash: 3, rain: 4, smoke: 5, snow: 6, ember: 7, ash: 8, flame: 9 } as const;
 export type ParticleKindName = keyof typeof ParticleKind;
-export const KIND_COUNT = 6;
+export const KIND_COUNT = 10;
 
 interface KindDef {
   gravity: number;      // units/s^2 downward (negative = buoyant)
@@ -25,6 +25,10 @@ const DEFS: KindDef[] = [
   /* splash */ { gravity: 260, dragXY: 2, dragZ: .2, wind: 4, restitution: .15, friction: 8, lifeMin: .35, lifeMax: .6, speed: 14, vzMin: 40, vzMax: 80, flutter: 0, dieOnGround: false },
   /* rain   */ { gravity: 60, dragXY: .5, dragZ: .3, wind: 30, restitution: 0, friction: 0, lifeMin: 3, lifeMax: 3.5, speed: 0, vzMin: -140, vzMax: -110, flutter: 0, dieOnGround: true },
   /* smoke  */ { gravity: -10, dragXY: 1, dragZ: 1.2, wind: 48, restitution: 0, friction: 2, lifeMin: 1.5, lifeMax: 3, speed: 4, vzMin: 8, vzMax: 16, flutter: 0, dieOnGround: false },
+  /* snow   */ { gravity: 9, dragXY: 1.4, dragZ: 1.6, wind: 34, restitution: 0, friction: 0, lifeMin: 9, lifeMax: 12, speed: 2, vzMin: -14, vzMax: -8, flutter: 9, dieOnGround: true },
+  /* ember  */ { gravity: 14, dragXY: 1.2, dragZ: 1.4, wind: 40, restitution: 0, friction: 0, lifeMin: 5, lifeMax: 8, speed: 3, vzMin: -22, vzMax: -10, flutter: 14, dieOnGround: true },
+  /* ash    */ { gravity: 6, dragXY: 1.6, dragZ: 1.8, wind: 30, restitution: 0, friction: 0, lifeMin: 8, lifeMax: 12, speed: 2, vzMin: -8, vzMax: -4, flutter: 12, dieOnGround: true },
+  /* flame  */ { gravity: -55, dragXY: 2.4, dragZ: .6, wind: 26, restitution: 0, friction: 0, lifeMin: .35, lifeMax: .8, speed: 5, vzMin: 10, vzMax: 26, flutter: 18, dieOnGround: false },
 ];
 
 const MAX_SPLASHES_PER_UPDATE = 256;
@@ -103,7 +107,7 @@ export class ParticleSystem {
       if (z <= 0 && vz < 0) {
         z = 0;
         if (def.dieOnGround) {
-          if (this.rainSplashes && splashes < MAX_SPLASHES_PER_UPDATE) { this.splashX[splashes] = x; this.splashY[splashes] = y; splashes++; }
+          if (this.kind[i] === ParticleKind.rain && this.rainSplashes && splashes < MAX_SPLASHES_PER_UPDATE) { this.splashX[splashes] = x; this.splashY[splashes] = y; splashes++; }
           this.remove(i); continue;
         }
         vz = -vz * def.restitution; if (vz < 3) vz = 0;

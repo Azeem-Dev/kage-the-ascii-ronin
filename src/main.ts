@@ -94,8 +94,19 @@ function bootstrap(): void {
     setDensity(densityParam);
   }
 
+  const zoomParam = Number.parseFloat(urlParams.get('zoom') ?? '');
+  if (Number.isFinite(zoomParam) && zoomParam > 0) {
+    testScene.adjustZoom(Math.log(zoomParam));
+  }
+
   // 4. Initialize Input & Debug Hotkeys
   const input = new InputManager();
+
+  // Mouse wheel zoom. Positive wheel delta zooms out, negative zooms in.
+  canvas.addEventListener('wheel', (event) => {
+    event.preventDefault();
+    testScene.adjustZoom(-event.deltaY * 0.001);
+  }, { passive: false });
 
   // F1: Toggle Raw Scene Buffer View
   input.registerDebugKey('F1', () => {
@@ -138,6 +149,13 @@ function bootstrap(): void {
   input.registerDebugKey('Digit2', () => setDensity('medium'));
   input.registerDebugKey('Digit3', () => setDensity('high'));
 
+  // Camera zoom controls.
+  input.registerDebugKey('Equal', () => testScene.adjustZoom(0.08));
+  input.registerDebugKey('NumpadAdd', () => testScene.adjustZoom(0.08));
+  input.registerDebugKey('Minus', () => testScene.adjustZoom(-0.08));
+  input.registerDebugKey('NumpadSubtract', () => testScene.adjustZoom(-0.08));
+  input.registerDebugKey('Digit0', () => testScene.resetZoom());
+
   // 5. Game Loop
   let accumulatedTime = 0;
   let logTimer = 0;
@@ -167,12 +185,13 @@ function bootstrap(): void {
       } else {
         // Visible View: Two-stage ASCII rendering pass
         asciiPass.render(sceneBuffer, ctx, accumulatedTime);
+        asciiPass.renderAtmosphere(ctx, accumulatedTime);
       }
 
       // Step C: Render telemetry HUD
       debugOverlay.render(ctx, loop.stats, cols, rows, canvas.width, canvas.height);
     },
-  });
+  }, CONFIG.display.targetFps);
 
   loop.start();
 }

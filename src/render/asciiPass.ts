@@ -360,8 +360,9 @@ export class AsciiPass {
             }
           }
         } else {
-          // 3c. Luminance Density Ramp Fallback using lit luminance
-          const rampIdx = Math.min(rampLen - 1, (litLum * rampLen) >> 8);
+          // 3c. Luminance Density Ramp Fallback using lit luminance. Very dark
+          // sky and distant scenery stay empty so foreground volumes dominate.
+          const rampIdx = litLum < 26 ? 0 : Math.min(rampLen - 1, (litLum * rampLen) >> 8);
           glyphId = activeRamp[rampIdx];
         }
 
@@ -395,6 +396,27 @@ export class AsciiPass {
         // 3e. Blit from pre-rendered atlas
         this.atlas.blit(destCtx, glyphId, colorIdx, cx * cw, destY);
       }
+    }
+  }
+
+  /**
+   * Foreground ASCII weather. Drawn after the scene pass so rain stays crisp
+   * and clearly separated from the material glyphs underneath it.
+   */
+  public renderAtmosphere(destCtx: CanvasRenderingContext2D, gameTime: number): void {
+    const drops = CONFIG.atmosphere.rainDrops;
+    const fall = Math.floor(gameTime * 26);
+    const wind = Math.floor(gameTime * 3.5);
+    const cw = this.atlas.cellWidth;
+    const ch = this.atlas.cellHeight;
+
+    for (let i = 0; i < drops; i++) {
+      const x = (i * 97 + wind + (i % 5) * 11) % this.cols;
+      const y = (i * 53 + fall + (i % 7) * 9) % this.rows;
+      const glyphId = i % 4 === 0 ? this.glyphVert : this.glyphDiagUp;
+      const shade = 42 + (i % 4) * 13;
+      const colorIdx = quantizeRGB(shade, shade + 28, shade + 58);
+      this.atlas.blit(destCtx, glyphId, colorIdx, x * cw, y * ch);
     }
   }
 }

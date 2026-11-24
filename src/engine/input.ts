@@ -25,14 +25,15 @@ export class InputManager {
       e.preventDefault();
     }
 
-    if (!this.keysDown.has(e.code)) {
+    const isNewPress = !this.keysDown.has(e.code);
+    if (isNewPress) {
       this.keyJustPressed.add(e.code);
     }
     this.keysDown.add(e.code);
 
-    // Trigger debug callback if registered
+    // Trigger debug callbacks only on the initial keydown, not while held.
     const cb = this.debugKeyCallbacks.get(e.key) || this.debugKeyCallbacks.get(e.code);
-    if (cb) {
+    if (cb && isNewPress) {
       cb();
     }
   }

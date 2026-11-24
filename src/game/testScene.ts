@@ -1,685 +1,782 @@
 // ============================================================================
-// True Isometric 3D Feudal Japan Scene (2:1 Projection)
-// Directional Moonlight Chiaroscuro: Lit Left Faces vs Shadowed Right Faces,
-// Elevated Stone Terrace, Recessed Shoji Dojo, 3D Torii Gate, and Drop Shadows.
-// Hardware-accelerated material rasterization (60+ FPS locked).
+// KAGE: The ASCII Ronin — Perspective Test Scene
+// A small CPU-only 3D projection feeds the Canvas2D scene buffer. There is no
+// WebGL, game engine or runtime dependency: every world face becomes a 2D
+// polygon which is then converted to ASCII by the existing renderer.
 // ============================================================================
 
 import { Material, Surface } from './materials.ts';
 import { SceneBuffer } from '../render/sceneBuffer.ts';
+import { CONFIG } from '../config.ts';
+
+interface Vec3 {
+  x: number;
+  y: number;
+  z: number;
+}
+
+interface Vec2 {
+  x: number;
+  y: number;
+}
+
+interface Face {
+  points: Vec3[];
+  normal: Vec3;
+  color: string;
+  material: Material;
+  surface: Surface;
+  emissive?: boolean;
+}
+
+const sub = (a: Vec3, b: Vec3): Vec3 => ({ x: a.x - b.x, y: a.y - b.y, z: a.z - b.z });
+const dot = (a: Vec3, b: Vec3): number => a.x * b.x + a.y * b.y + a.z * b.z;
+const cross = (a: Vec3, b: Vec3): Vec3 => ({
+  x: a.y * b.z - a.z * b.y,
+  y: a.z * b.x - a.x * b.z,
+  z: a.x * b.y - a.y * b.x,
+});
+const normalize = (v: Vec3): Vec3 => {
+  const length = Math.hypot(v.x, v.y, v.z) || 1;
+  return { x: v.x / length, y: v.y / length, z: v.z / length };
+};
+const centerOf = (points: Vec3[]): Vec3 => {
+  const center = { x: 0, y: 0, z: 0 };
+  for (const point of points) {
+    center.x += point.x;
+    center.y += point.y;
+    center.z += point.z;
+  }
+  const count = Math.max(1, points.length);
+  return { x: center.x / count, y: center.y / count, z: center.z / count };
+};
+
+const MOON_DIRECTION = normalize({ x: -0.45, y: -0.65, z: 0.75 });
 
 export class TestScene {
+  private readonly cameraPosition: Vec3 = { x: 330, y: -430, z: 260 };
+  private readonly cameraTarget: Vec3 = { x: 0, y: 60, z: 15 };
+  private readonly baseFocalLength = 420;
+  private targetZoom = 1;
+  private zoom = 1;
+  private readonly cameraForward: Vec3;
+  private readonly cameraRight: Vec3;
+  private readonly cameraUp: Vec3;
+
+  constructor() {
+    this.cameraForward = normalize(sub(this.cameraTarget, this.cameraPosition));
+    this.cameraRight = normalize(cross(this.cameraForward, { x: 0, y: 0, z: 1 }));
+    this.cameraUp = cross(this.cameraRight, this.cameraForward);
+  }
+
+  public adjustZoom(amount: number): void {
+    this.targetZoom = Math.max(0.65, Math.min(1.8, this.targetZoom * Math.exp(amount)));
+  }
+
+  public resetZoom(): void {
+    this.targetZoom = 1;
+  }
+
+  public getZoom(): number {
+    return this.targetZoom;
+  }
+
   public render(buffer: SceneBuffer, gameTime: number): void {
-    const w = buffer.width;   // 400
-    const h = buffer.height;  // 224
+    const w = buffer.width;
+    const h = buffer.height;
 
-    // 1. Clear buffers: deep night moss ground + balanced ambient moonlight
-    buffer.clear('#0a1410', '#2b3b50');
+    // Smooth camera zoom rather than snapping between focal lengths.
+    this.zoom += (this.targetZoom - this.zoom) * 0.18;
 
-    // 2. Multi-tier Isometric Ground: Garden lawn, elevated stone terrace, path, pond
-    this.renderTerraceAndGround(buffer, w, h);
-    this.renderPath(buffer);
-    this.renderPond(buffer);
-
-    // 3. Volumetric Isometric Dojo (Foundation -> Lit Left Wall -> Shaded Right Wall -> 3D Roof)
-    this.renderIsometricDojo(buffer);
-
-    // 4. Isometric Crimson Torii Gate (Foreground/background pillars in depth)
-    this.renderIsometricTorii(buffer);
-
-    // 5. Isometric Wooden Fence (2:1 slope enclosing the courtyard)
-    this.renderIsometricFence(buffer);
-
-    // 6. 3D Gnarled Pine Tree with Isometric Cloud Canopies
-    this.renderPineTree(buffer);
-
-    // 7. Lanterns (Hanging Chōchin & Stone Tōrō)
-    this.renderLanterns(buffer);
-
-    // 8. Dynamic 2D Lighting Map (Directional moonlight + warm lantern radiance)
+    buffer.clear('#050914', '#35465c');
+    this.renderSky(buffer, w, h);
+    this.renderGround(buffer);
+    this.renderTerrace(buffer);
+    this.renderDojo(buffer);
+    this.renderPineTree(buffer, gameTime);
+    this.renderPondAndBridge(buffer);
+    this.renderFence(buffer);
+    this.renderTorii(buffer);
+    this.renderStoneLantern(buffer);
+    this.renderFireflies(buffer, gameTime);
+    this.renderDriftingMist(buffer, gameTime);
     this.renderLighting(buffer, w, h, gameTime);
-
-    // 9. Composite geometry and lightmap into the final scene canvas
     buffer.composite();
   }
 
   // --------------------------------------------------------------------------
-  // ELEVATED STONE TERRACE & ISOMETRIC GROUND PLANE
+  // Camera projection and primitive rendering
   // --------------------------------------------------------------------------
-  private renderTerraceAndGround(buffer: SceneBuffer, w: number, h: number): void {
-    // Base grass lawn (lower tier)
-    buffer.drawRect(0, 0, w, h, '#0c1a14', Material.GRASS, Surface.HORIZONTAL);
 
-    // Subtle patches of wild grass tufts around courtyard borders
-    const grassTufts = [
-      { x: 20, y: 30, w: 45, h: 40 },
-      { x: 15, y: 170, w: 40, h: 45 },
-      { x: 340, y: 180, w: 55, h: 35 },
-      { x: 345, y: 20, w: 50, h: 40 },
-    ];
-    for (const tuft of grassTufts) {
-      buffer.drawRect(tuft.x, tuft.y, tuft.w, tuft.h, '#0e241b', Material.GRASS, Surface.HORIZONTAL);
-    }
-
-    // Elevated Stone Terrace (Upper Tier where the Dojo sits)
-    // Terrace front corner: (240, 155), Left corner: (130, 100), Right corner: (350, 100), Back: (240, 45)
-    // Front-left terrace retaining wall
-    const wallLeft = [
-      { x: 130, y: 100 },
-      { x: 240, y: 155 },
-      { x: 240, y: 165 },
-      { x: 130, y: 110 },
-    ];
-    buffer.drawPolygon(wallLeft, '#2b3642', Material.STONE, Surface.VERTICAL);
-
-    // Front-right terrace retaining wall (in shadow)
-    const wallRight = [
-      { x: 240, y: 155 },
-      { x: 350, y: 100 },
-      { x: 350, y: 110 },
-      { x: 240, y: 165 },
-    ];
-    buffer.drawPolygon(wallRight, '#1e2630', Material.STONE, Surface.VERTICAL);
-
-    // Terrace flat gravel courtyard surface (top of terrace)
-    const terraceTop = [
-      { x: 240, y: 45 },
-      { x: 350, y: 100 },
-      { x: 240, y: 155 },
-      { x: 130, y: 100 },
-    ];
-    buffer.drawPolygon(terraceTop, '#141c26', Material.STONE, Surface.HORIZONTAL);
-    buffer.strokePolygon(terraceTop, '#4a5868', 1);
-
-    // Masonry seams make the retaining wall read as extruded stone courses.
-    for (let i = 1; i < 4; i++) {
-      const t = i / 4;
-      buffer.drawLine(
-        130 + 110 * t,
-        100 + 55 * t,
-        130 + 110 * t,
-        110 + 55 * t,
-        '#151d27',
-        1
-      );
-      buffer.drawLine(
-        240 + 110 * t,
-        155 - 55 * t,
-        240 + 110 * t,
-        165 - 55 * t,
-        '#111821',
-        1
-      );
-    }
-
-    // Drop shadow under the elevated terrace onto the lower grass
-    buffer.drawGroundShadow([
-      { x: 130, y: 110 },
-      { x: 240, y: 165 },
-      { x: 350, y: 110 },
-      { x: 360, y: 118 },
-      { x: 240, y: 174 },
-      { x: 125, y: 118 },
-    ], 0.6);
-
-    // Stone Steps leading up to the terrace from the path
-    const stairX = 185;
-    const stairY = 128;
-    const stairPts = [
-      { x: stairX - 16, y: stairY - 8 },
-      { x: stairX + 16, y: stairY + 8 },
-      { x: stairX + 16, y: stairY + 16 },
-      { x: stairX - 16, y: stairY },
-    ];
-    buffer.drawPolygon(stairPts, '#3d4b5a', Material.STONE, Surface.HORIZONTAL);
+  private project(point: Vec3): Vec2 {
+    const relative = sub(point, this.cameraPosition);
+    const depth = Math.max(1, dot(relative, this.cameraForward));
+    const scale = (this.baseFocalLength * this.zoom) / depth;
+    return {
+      x: 200 + dot(relative, this.cameraRight) * scale,
+      y: 112 - dot(relative, this.cameraUp) * scale,
+    };
   }
 
-  private renderPath(buffer: SceneBuffer): void {
-    // Winding flagstone path following the 2:1 isometric axis toward the terrace stairs
-    const stones = [
-      { x: 55, y: 205, rx: 14, ry: 7 },
-      { x: 78, y: 192, rx: 14, ry: 7 },
-      { x: 100, y: 180, rx: 15, ry: 8 },
-      // Passes through the Torii gate
-      { x: 124, y: 167, rx: 15, ry: 8 },
-      { x: 146, y: 155, rx: 16, ry: 8 },
-      // Leads directly to the terrace stairs
-      { x: 168, y: 142, rx: 16, ry: 8 },
-    ];
-
-    for (const st of stones) {
-      // Ground contact drop shadow
-      buffer.geometryCtx.fillStyle = 'rgba(2, 5, 8, 0.55)';
-      buffer.geometryCtx.beginPath();
-      buffer.geometryCtx.ellipse(st.x + 2, st.y + 3, st.rx + 1, st.ry + 1, 0, 0, Math.PI * 2);
-      buffer.geometryCtx.fill();
-
-      // Stone dark side bevel (gives 3D stone height)
-      buffer.drawEllipse(st.x, st.y + 2, st.rx, st.ry, '#242b33', Material.STONE, Surface.VERTICAL);
-
-      // Stone top flat surface (Material.STONE)
-      buffer.drawEllipse(st.x, st.y, st.rx - 1, st.ry - 1, '#3b4754', Material.STONE, Surface.HORIZONTAL);
-
-      // Top highlight rim
-      buffer.geometryCtx.fillStyle = '#506173';
-      buffer.geometryCtx.beginPath();
-      buffer.geometryCtx.ellipse(st.x - 2, st.y - 1, st.rx * 0.5, st.ry * 0.4, 0, 0, Math.PI * 2);
-      buffer.geometryCtx.fill();
-    }
+  private cameraDepth(point: Vec3): number {
+    return dot(sub(point, this.cameraPosition), this.cameraForward);
   }
 
-  private renderPond(buffer: SceneBuffer): void {
-    // 2:1 Isometric Garden Koi Pond (bottom-right on lower tier)
-    const px = 295;
-    const py = 175;
-    const prx = 48;
-    const pry = 24;
+  private shadeColor(color: string, normal: Vec3, emissive = false): string {
+    if (emissive) return color;
 
-    // Recessed bank shadow
-    buffer.geometryCtx.fillStyle = '#05090f';
-    buffer.geometryCtx.beginPath();
-    buffer.geometryCtx.ellipse(px + 3, py + 4, prx + 5, pry + 4, 0, 0, Math.PI * 2);
-    buffer.geometryCtx.fill();
+    const diffuse = Math.max(0, dot(normal, MOON_DIRECTION));
+    const factor = 0.46 + diffuse * 0.68;
+    const hex = color.replace('#', '');
+    const r = parseInt(hex.substring(0, 2), 16);
+    const g = parseInt(hex.substring(2, 4), 16);
+    const b = parseInt(hex.substring(4, 6), 16);
+    const channel = (value: number): number => Math.max(0, Math.min(255, Math.round(value * factor)));
+    return `rgb(${channel(r)}, ${channel(g)}, ${channel(b)})`;
+  }
 
-    // Smooth stone embankment rim (2:1 ellipse)
-    buffer.drawEllipse(px, py, prx + 4, pry + 3, '#26313c', Material.STONE, Surface.HORIZONTAL);
+  private drawFace(buffer: SceneBuffer, face: Face): void {
+    const center = centerOf(face.points);
+    const toCamera = sub(this.cameraPosition, center);
+    if (dot(face.normal, toCamera) <= 0) return;
 
-    // Deep water surface
-    buffer.drawEllipse(px, py, prx, pry, '#0a2033', Material.WATER, Surface.HORIZONTAL);
+    buffer.drawPolygon(
+      face.points.map((point) => this.project(point)),
+      this.shadeColor(face.color, face.normal, face.emissive),
+      face.material,
+      face.surface
+    );
+  }
 
-    // Isometric wooden footbridge spanning across the pond
-    const bx0 = px - 24;
-    const by0 = py - 9;
-    const bx1 = px + 8;
-    const by1 = py + 7;
-    // Bridge shadow
-    buffer.drawGroundShadow([
-      { x: bx0 + 2, y: by0 + 10 },
-      { x: bx1 + 2, y: by1 + 10 },
-      { x: bx1 + 6, y: by1 + 14 },
-      { x: bx0 + 6, y: by0 + 14 },
-    ], 0.6);
-    // Bridge planks
-    const bridgePts = [
-      { x: bx0, y: by0 },
-      { x: bx1, y: by1 },
-      { x: bx1 - 6, y: by1 + 5 },
-      { x: bx0 - 6, y: by0 + 5 },
+  private drawBox(
+    buffer: SceneBuffer,
+    min: Vec3,
+    max: Vec3,
+    color: string,
+    material: Material,
+    sideSurface: Surface = Surface.VERTICAL,
+    topSurface: Surface = Surface.HORIZONTAL,
+    emissive = false
+  ): void {
+    const p000 = { x: min.x, y: min.y, z: min.z };
+    const p100 = { x: max.x, y: min.y, z: min.z };
+    const p110 = { x: max.x, y: max.y, z: min.z };
+    const p010 = { x: min.x, y: max.y, z: min.z };
+    const p001 = { x: min.x, y: min.y, z: max.z };
+    const p101 = { x: max.x, y: min.y, z: max.z };
+    const p111 = { x: max.x, y: max.y, z: max.z };
+    const p011 = { x: min.x, y: max.y, z: max.z };
+
+    const faces: Face[] = [
+      { points: [p001, p101, p111, p011], normal: { x: 0, y: 0, z: 1 }, color, material, surface: topSurface, emissive },
+      { points: [p000, p100, p101, p001], normal: { x: 0, y: -1, z: 0 }, color, material, surface: sideSurface, emissive },
+      { points: [p100, p110, p111, p101], normal: { x: 1, y: 0, z: 0 }, color, material, surface: sideSurface, emissive },
+      { points: [p110, p010, p011, p111], normal: { x: 0, y: 1, z: 0 }, color, material, surface: sideSurface, emissive },
+      { points: [p010, p000, p001, p011], normal: { x: -1, y: 0, z: 0 }, color, material, surface: sideSurface, emissive },
     ];
-    buffer.drawPolygon(bridgePts, '#553924', Material.WOOD, Surface.HORIZONTAL);
+
+    faces.sort((a, b) => this.cameraDepth(centerOf(b.points)) - this.cameraDepth(centerOf(a.points)));
+    for (const face of faces) this.drawFace(buffer, face);
+  }
+
+  private drawCylinder(
+    buffer: SceneBuffer,
+    cx: number,
+    cy: number,
+    z0: number,
+    z1: number,
+    baseRadius: number,
+    topRadius: number,
+    color: string,
+    material: Material,
+    emissive = false,
+    segments = 10
+  ): void {
+    const sides: Face[] = [];
+    for (let i = 0; i < segments; i++) {
+      const a0 = (i / segments) * Math.PI * 2;
+      const a1 = ((i + 1) / segments) * Math.PI * 2;
+      const middle = (a0 + a1) * 0.5;
+      sides.push({
+        points: [
+          { x: cx + Math.cos(a0) * baseRadius, y: cy + Math.sin(a0) * baseRadius, z: z0 },
+          { x: cx + Math.cos(a1) * baseRadius, y: cy + Math.sin(a1) * baseRadius, z: z0 },
+          { x: cx + Math.cos(a1) * topRadius, y: cy + Math.sin(a1) * topRadius, z: z1 },
+          { x: cx + Math.cos(a0) * topRadius, y: cy + Math.sin(a0) * topRadius, z: z1 },
+        ],
+        normal: { x: Math.cos(middle), y: Math.sin(middle), z: 0 },
+        color,
+        material,
+        surface: Surface.CYLINDER,
+        emissive,
+      });
+    }
+
+    sides.sort((a, b) => this.cameraDepth(centerOf(b.points)) - this.cameraDepth(centerOf(a.points)));
+    for (const face of sides) this.drawFace(buffer, face);
+
+    const topPoints: Vec3[] = [];
+    for (let i = 0; i < segments; i++) {
+      const angle = (i / segments) * Math.PI * 2;
+      topPoints.push({ x: cx + Math.cos(angle) * topRadius, y: cy + Math.sin(angle) * topRadius, z: z1 });
+    }
+    this.drawFace(buffer, {
+      points: topPoints,
+      normal: { x: 0, y: 0, z: 1 },
+      color,
+      material,
+      surface: Surface.HORIZONTAL,
+      emissive,
+    });
+  }
+
+  private drawWorldEllipse(
+    buffer: SceneBuffer,
+    cx: number,
+    cy: number,
+    z: number,
+    rx: number,
+    ry: number,
+    color: string,
+    material: Material,
+    surface: Surface = Surface.HORIZONTAL,
+    emissive = false,
+    segments = 24
+  ): void {
+    const points: Vec3[] = [];
+    for (let i = 0; i < segments; i++) {
+      const angle = (i / segments) * Math.PI * 2;
+      points.push({ x: cx + Math.cos(angle) * rx, y: cy + Math.sin(angle) * ry, z });
+    }
+    this.drawFace(buffer, { points, normal: { x: 0, y: 0, z: 1 }, color, material, surface, emissive });
+  }
+
+  private drawFlatShadow(
+    buffer: SceneBuffer,
+    cx: number,
+    cy: number,
+    z: number,
+    rx: number,
+    ry: number,
+    opacity: number,
+    segments = 20
+  ): void {
+    const points: Vec2[] = [];
+    for (let i = 0; i < segments; i++) {
+      const angle = (i / segments) * Math.PI * 2;
+      points.push(this.project({ x: cx + Math.cos(angle) * rx, y: cy + Math.sin(angle) * ry, z }));
+    }
+    buffer.drawGroundShadow(points, opacity);
+  }
+
+  private drawPolygonShadow(buffer: SceneBuffer, points: Vec3[], opacity: number): void {
+    buffer.drawGroundShadow(points.map((point) => this.project(point)), opacity);
+  }
+
+  private drawLine3D(buffer: SceneBuffer, a: Vec3, b: Vec3, color: string, width = 1): void {
+    const pa = this.project(a);
+    const pb = this.project(b);
+    buffer.drawLine(pa.x, pa.y, pb.x, pb.y, color, width);
+  }
+
+  private drawBranch(buffer: SceneBuffer, a: Vec3, b: Vec3, width: number, color: string): void {
+    const pa = this.project(a);
+    const pb = this.project(b);
+    const dx = pb.x - pa.x;
+    const dy = pb.y - pa.y;
+    const length = Math.hypot(dx, dy) || 1;
+    const nx = (-dy / length) * width * 0.5;
+    const ny = (dx / length) * width * 0.5;
+    buffer.drawPolygon(
+      [
+        { x: pa.x + nx, y: pa.y + ny },
+        { x: pb.x + nx, y: pb.y + ny },
+        { x: pb.x - nx, y: pb.y - ny },
+        { x: pa.x - nx, y: pa.y - ny },
+      ],
+      color,
+      Material.WOOD,
+      Surface.VERTICAL
+    );
   }
 
   // --------------------------------------------------------------------------
-  // TRUE ISOMETRIC DOJO (LIT SOUTH-WEST FACE vs SHADOWED SOUTH-EAST FACE)
+  // Sky, distant scenery and ground plane
   // --------------------------------------------------------------------------
-  private renderIsometricDojo(buffer: SceneBuffer): void {
-    // Central corner post coordinates (on top of terrace)
-    const cx = 236;
-    const cy = 126;
-    const wallH = 28;
 
-    // Left wall vector: dx = -64, dy = -32 (2:1 slope)
-    const lx = cx - 64; // 172
-    const ly = cy - 32; // 94
+  private renderSky(buffer: SceneBuffer, w: number, h: number): void {
+    const ctx = buffer.geometryCtx;
+    const sky = ctx.createLinearGradient(0, 0, 0, h);
+    sky.addColorStop(0, '#030611');
+    sky.addColorStop(0.55, '#07101f');
+    sky.addColorStop(1, '#102033');
+    ctx.fillStyle = sky;
+    ctx.fillRect(0, 0, w, h);
 
-    // Right wall vector: dx = +72, dy = -36 (2:1 slope)
-    const rx = cx + 72; // 308
-    const ry = cy - 36; // 90
-
-    // Back corner
-    const by = cy - 32 - 36; // 58
-
-    // 1. Building Ground Drop Shadow on terrace gravel
-    buffer.drawGroundShadow([
-      { x: cx, y: cy + 4 },
-      { x: rx + 8, y: ry + 4 },
-      { x: rx + 40, y: ry + 18 },
-      { x: cx + 32, y: cy + 18 },
-    ], 0.6);
-
-    // Long directional roof shadow anchors the building to the terrace.
-    buffer.drawGroundShadow([
-      { x: lx - 12, y: ly + 4 },
-      { x: cx + 10, y: cy + 8 },
-      { x: rx + 34, y: ry + 12 },
-      { x: rx + 52, y: ry + 30 },
-      { x: cx + 30, y: cy + 34 },
-      { x: lx + 12, y: ly + 24 },
-    ], 0.42);
-
-    // 2. Elevated Timber Veranda (Engawa) Platform
-    // Left Veranda face (Lit by lantern & moon)
-    const engawaLeft = [
-      { x: lx - 4, y: ly + 2 },
-      { x: cx, y: cy + 4 },
-      { x: cx, y: cy + 1 },
-      { x: lx - 4, y: ly - 1 },
-    ];
-    buffer.drawPolygon(engawaLeft, '#5a3b25', Material.WOOD, Surface.VERTICAL);
-
-    // Right Veranda face (in shadow)
-    const engawaRight = [
-      { x: cx, y: cy + 4 },
-      { x: rx + 4, y: ry + 2 },
-      { x: rx + 4, y: ry - 1 },
-      { x: cx, y: cy + 1 },
-    ];
-    buffer.drawPolygon(engawaRight, '#3a2517', Material.WOOD, Surface.VERTICAL);
-
-    // 3. FRONT-LEFT WALL (SOUTH-WEST) — BRIGHTLY LIT WITH GLOWING SHOJI DOORS
-    const wallLeftPts = [
-      { x: lx, y: ly },
-      { x: cx, y: cy },
-      { x: cx, y: cy - wallH },
-      { x: lx, y: ly - wallH },
-    ];
-    buffer.drawPolygon(wallLeftPts, '#222e3b', Material.WOOD, Surface.VERTICAL);
-
-    // Glowing Shoji sliding screen bays along the Left Wall (Facing Viewer)
-    const numBays = 3;
-    for (let b = 0; b < numBays; b++) {
-      const t0 = (b + 0.15) / numBays;
-      const t1 = (b + 0.85) / numBays;
-
-      const x0 = Math.round(lx + t0 * (cx - lx));
-      const y0 = Math.round(ly + t0 * (cy - ly));
-      const x1 = Math.round(lx + t1 * (cx - lx));
-      const y1 = Math.round(ly + t1 * (cy - ly));
-
-      const bayPts = [
-        { x: x0, y: y0 - 3 },
-        { x: x1, y: y1 - 3 },
-        { x: x1, y: y1 - wallH + 5 },
-        { x: x0, y: y0 - wallH + 5 },
-      ];
-      // Golden glowing paper
-      buffer.drawPolygon(bayPts, '#f8cf6e', Material.SHOJI, Surface.VERTICAL);
-
-      // Deep eave shadow across upper portion of Shoji bay
-      const bayShadowPts = [
-        { x: x0, y: y0 - wallH + 11 },
-        { x: x1, y: y1 - wallH + 11 },
-        { x: x1, y: y1 - wallH + 5 },
-        { x: x0, y: y0 - wallH + 5 },
-      ];
-      buffer.drawPolygon(bayShadowPts, '#9e7529', Material.SHOJI, Surface.VERTICAL);
+    // Deterministic stars keep the static scene stable between frames.
+    for (let i = 0; i < 34; i++) {
+      const x = (i * 73 + 19) % w;
+      const y = (i * 37 + 11) % 68;
+      const alpha = 0.18 + ((i * 17) % 50) / 100;
+      ctx.fillStyle = `rgba(174, 205, 235, ${alpha})`;
+      ctx.fillRect(x, y, i % 7 === 0 ? 2 : 1, 1);
     }
 
-    // 4. FRONT-RIGHT WALL (SOUTH-EAST) — DEEP SHADOW TIMBER WALL WITH WINDOW
-    const wallRightPts = [
-      { x: cx, y: cy },
-      { x: rx, y: ry },
-      { x: rx, y: ry - wallH },
-      { x: cx, y: cy - wallH },
-    ];
-    buffer.drawPolygon(wallRightPts, '#182432', Material.WOOD, Surface.VERTICAL);
+    buffer.drawCircle(338, 28, 10, '#b9d2e8', Material.MOON, Surface.HORIZONTAL);
+    buffer.drawCircle(335, 25, 4, '#eef7ff', Material.MOON, Surface.HORIZONTAL);
+    buffer.drawCircle(341, 31, 2, '#9fbad1', Material.MOON, Surface.HORIZONTAL);
+  }
 
-    // Decorative shoji window on the right wall (dimmer in shadow)
-    const winPts = [
-      { x: cx + 22, y: cy - 11 - 5 },
-      { x: cx + 48, y: cy - 24 - 5 },
-      { x: cx + 48, y: cy - 24 - 17 },
-      { x: cx + 22, y: cy - 11 - 17 },
-    ];
-    buffer.drawPolygon(winPts, '#c89d42', Material.SHOJI, Surface.VERTICAL);
+  private renderGround(buffer: SceneBuffer): void {
+    this.drawFace(buffer, {
+      points: [
+        { x: -520, y: -220, z: 0 },
+        { x: 520, y: -220, z: 0 },
+        { x: 520, y: 800, z: 0 },
+        { x: -520, y: 800, z: 0 },
+      ],
+      normal: { x: 0, y: 0, z: 1 },
+      color: '#0b1b16',
+      material: Material.GRASS,
+      surface: Surface.HORIZONTAL,
+    });
 
-    // Timber posts (Left corner, Central corner, Right corner)
-    buffer.drawRect(cx - 2, cy - wallH - 2, 5, wallH + 4, '#2e1c12', Material.WOOD, Surface.VERTICAL);
-    buffer.drawRect(lx - 2, ly - wallH - 2, 4, wallH + 4, '#2e1c12', Material.WOOD, Surface.VERTICAL);
-    buffer.drawRect(rx - 2, ry - wallH - 2, 4, wallH + 4, '#1c100a', Material.WOOD, Surface.VERTICAL);
+    // Subtle lawn color variation gives the ground depth without texture noise.
+    this.drawWorldEllipse(buffer, -210, 80, 0.05, 120, 70, '#0d2119', Material.GRASS);
+    this.drawWorldEllipse(buffer, 260, 230, 0.05, 150, 85, '#0a1813', Material.GRASS);
+    this.drawWorldEllipse(buffer, -40, 330, 0.05, 190, 100, '#0e211a', Material.GRASS);
 
-    // 5. ISOMETRIC ROOF (IRIMOYA-ZUKURI WITH 3D HIP SLOPES)
-    const eaveFront = { x: cx, y: cy - wallH + 8 };
-    const eaveLeft = { x: lx - 14, y: ly - wallH - 2 };
-    const eaveRight = { x: rx + 14, y: ry - wallH - 2 };
-
-    // Eave underside shadow cast onto walls
-    buffer.drawGroundShadow([
-      { x: eaveLeft.x, y: eaveLeft.y + 2 },
-      { x: eaveFront.x, y: eaveFront.y + 2 },
-      { x: eaveRight.x, y: eaveRight.y + 2 },
-      { x: cx, y: cy - wallH },
-    ], 0.7);
-
-    // Ridge beam (Mune) at the roof peak
-    const ridgeY = by - wallH - 24;
-    const ridgeL = { x: cx - 22, y: ridgeY + 11 };
-    const ridgeR = { x: cx + 26, y: ridgeY - 13 };
-
-    // LEFT ROOF PLANE (Facing Moonlight — Bright Slate Blue)
-    const roofLeftFace = [
-      { x: eaveLeft.x, y: eaveLeft.y },
-      { x: eaveFront.x, y: eaveFront.y },
-      { x: ridgeL.x, y: ridgeL.y },
-      { x: eaveLeft.x + 18, y: ridgeY + 4 },
-    ];
-    buffer.drawPolygon(roofLeftFace, '#344c66', Material.ROOF_TILES, Surface.SLOPE_LEFT);
-    buffer.strokePolygon(roofLeftFace, '#6f8fae', 1);
-
-    // Tile courses across the Left Roof Face
-    for (let i = 1; i < 4; i++) {
-      const t = i / 4;
-      const tx0 = Math.round(eaveLeft.x + t * (eaveLeft.x + 18 - eaveLeft.x));
-      const ty0 = Math.round(eaveLeft.y + t * (ridgeY + 4 - eaveLeft.y));
-      const tx1 = Math.round(eaveFront.x + t * (ridgeL.x - eaveFront.x));
-      const ty1 = Math.round(eaveFront.y + t * (ridgeL.y - eaveFront.y));
-      buffer.drawPolygon([
-        { x: tx0, y: ty0 },
-        { x: tx1, y: ty1 },
-        { x: tx1, y: ty1 - 1 },
-        { x: tx0, y: ty0 - 1 },
-      ], '#223244', Material.ROOF_TILES, Surface.SLOPE_LEFT);
-    }
-
-    // RIGHT ROOF PLANE (Facing Away from Moon — Deep Dark Shadow Indigo)
-    const roofRightFace = [
-      { x: eaveFront.x, y: eaveFront.y },
-      { x: eaveRight.x, y: eaveRight.y },
-      { x: ridgeR.x, y: ridgeR.y },
-      { x: ridgeL.x, y: ridgeL.y },
-    ];
-    buffer.drawPolygon(roofRightFace, '#203146', Material.ROOF_TILES, Surface.SLOPE_RIGHT);
-    buffer.strokePolygon(roofRightFace, '#3f5872', 1);
-
-    // Tile courses across the Right Roof Face
-    for (let i = 1; i < 4; i++) {
-      const t = i / 4;
-      const tx0 = Math.round(eaveFront.x + t * (ridgeL.x - eaveFront.x));
-      const ty0 = Math.round(eaveFront.y + t * (ridgeL.y - eaveFront.y));
-      const tx1 = Math.round(eaveRight.x + t * (ridgeR.x - eaveRight.x));
-      const ty1 = Math.round(eaveRight.y + t * (ridgeR.y - eaveRight.y));
-      buffer.drawPolygon([
-        { x: tx0, y: ty0 },
-        { x: tx1, y: ty1 },
-        { x: tx1, y: ty1 - 1 },
-        { x: tx0, y: ty0 - 1 },
-      ], '#162335', Material.ROOF_TILES, Surface.SLOPE_RIGHT);
-    }
-
-    // Central Corner Hip Ridge (Sumimune) running down to eaveFront
-    const hipRidgePts = [
-      { x: eaveFront.x - 2, y: eaveFront.y },
-      { x: eaveFront.x + 2, y: eaveFront.y },
-      { x: ridgeL.x + 2, y: ridgeL.y },
-      { x: ridgeL.x - 2, y: ridgeL.y },
-    ];
-    buffer.drawPolygon(hipRidgePts, '#4f7196', Material.ROOF_TILES, Surface.HORIZONTAL);
-
-    // Ridge Beam (Mune) with ornamental Onigawara crests
+    // Distant mountain silhouettes establish a horizon and atmospheric scale.
     buffer.drawPolygon([
-      { x: ridgeL.x - 2, y: ridgeL.y + 1 },
-      { x: ridgeR.x + 2, y: ridgeR.y + 1 },
-      { x: ridgeR.x + 2, y: ridgeR.y - 4 },
-      { x: ridgeL.x - 2, y: ridgeL.y - 4 },
-    ], '#6086b0', Material.ROOF_TILES, Surface.HORIZONTAL);
-
-    // Flared upturned eave tips (Sori)
-    buffer.drawRect(eaveFront.x - 2, eaveFront.y - 2, 5, 4, '#6b95c4', Material.ROOF_TILES, Surface.HORIZONTAL);
-    buffer.drawRect(eaveLeft.x - 2, eaveLeft.y - 2, 4, 4, '#6b95c4', Material.ROOF_TILES, Surface.HORIZONTAL);
-    buffer.drawRect(eaveRight.x - 2, eaveRight.y - 2, 4, 4, '#4a6b8f', Material.ROOF_TILES, Surface.HORIZONTAL);
-
-    // Crisp ridge and eave highlights survive the ASCII downsample as a
-    // continuous silhouette instead of a noisy tile texture.
-    buffer.drawLine(ridgeL.x, ridgeL.y, ridgeR.x, ridgeR.y, '#a5c4e2', 1.5);
-    buffer.drawLine(eaveLeft.x, eaveLeft.y, eaveFront.x, eaveFront.y, '#6f8fae', 1);
-    buffer.drawLine(eaveFront.x, eaveFront.y, eaveRight.x, eaveRight.y, '#405a76', 1);
-  }
-
-  // --------------------------------------------------------------------------
-  // ISOMETRIC CRIMSON TORII GATE
-  // --------------------------------------------------------------------------
-  private renderIsometricTorii(buffer: SceneBuffer): void {
-    const p0x = 108; // Front-left pillar (foreground)
-    const p0y = 176;
-    const p1x = 138; // Back-right pillar (depth)
-    const p1y = 161;
-    const pillarH = 34;
-
-    // 1. Angled Drop Shadow on stone path
-    buffer.drawGroundShadow([
-      { x: p0x, y: p0y },
-      { x: p1x, y: p1y },
-      { x: p1x + 26, y: p1y + 13 },
-      { x: p0x + 26, y: p0y + 13 },
-    ], 0.6);
-
-    // 2. Pillars & Stone Foundation Collars
-    // Back-right pillar (in shadow)
-    buffer.drawRect(p1x - 3, p1y - 3, 8, 4, '#242c36', Material.STONE, Surface.HORIZONTAL);
-    buffer.drawRect(p1x - 2, p1y - pillarH, 5, pillarH, '#881813', Material.TORII, Surface.VERTICAL);
-
-    // Front-left pillar (lit)
-    buffer.drawRect(p0x - 3, p0y - 3, 8, 4, '#28323c', Material.STONE, Surface.HORIZONTAL);
-    buffer.drawRect(p0x - 2, p0y - pillarH, 5, pillarH, '#b32019', Material.TORII, Surface.VERTICAL);
-    buffer.drawRect(p0x - 1, p0y - pillarH, 2, pillarH, '#d92c24', Material.TORII, Surface.VERTICAL); // 3D highlight
-
-    // 3. Lower Tie Beam (Nuki) connecting pillars
-    const nukiPts = [
-      { x: p0x - 6, y: p0y - pillarH + 11 },
-      { x: p1x + 6, y: p1y - pillarH + 11 },
-      { x: p1x + 6, y: p1y - pillarH + 8 },
-      { x: p0x - 6, y: p0y - pillarH + 8 },
-    ];
-    buffer.drawPolygon(nukiPts, '#bf231c', Material.TORII, Surface.HORIZONTAL);
-
-    // 4. Upper Main Lintel (Kasagi & Shimaki) with curved upturned tips
-    const lintelPts = [
-      { x: p0x - 12, y: p0y - pillarH - 2 },
-      { x: p1x + 12, y: p1y - pillarH - 2 },
-      { x: p1x + 16, y: p1y - pillarH - 7 },
-      { x: p0x - 16, y: p0y - pillarH - 7 },
-    ];
-    buffer.drawPolygon(lintelPts, '#db2921', Material.TORII, Surface.HORIZONTAL);
-    buffer.strokePolygon(lintelPts, '#ff6a55', 1);
-
-    // Black protective roof cap on torii lintel
+      { x: 0, y: 76 }, { x: 35, y: 48 }, { x: 66, y: 63 }, { x: 104, y: 34 },
+      { x: 142, y: 61 }, { x: 184, y: 43 }, { x: 226, y: 66 }, { x: 274, y: 39 },
+      { x: 318, y: 61 }, { x: 356, y: 45 }, { x: 400, y: 72 }, { x: 400, y: 92 }, { x: 0, y: 92 },
+    ], '#0a1422', Material.NONE);
     buffer.drawPolygon([
-      { x: p0x - 15, y: p0y - pillarH - 7 },
-      { x: p1x + 15, y: p1y - pillarH - 7 },
-      { x: p1x + 17, y: p1y - pillarH - 9 },
-      { x: p0x - 17, y: p0y - pillarH - 9 },
-    ], '#182028', Material.WOOD, Surface.HORIZONTAL);
-  }
+      { x: 0, y: 84 }, { x: 48, y: 64 }, { x: 88, y: 78 }, { x: 132, y: 55 },
+      { x: 176, y: 82 }, { x: 222, y: 60 }, { x: 268, y: 83 }, { x: 314, y: 58 },
+      { x: 354, y: 79 }, { x: 400, y: 66 }, { x: 400, y: 98 }, { x: 0, y: 98 },
+    ], '#0e1b2c', Material.NONE);
 
-  // --------------------------------------------------------------------------
-  // ISOMETRIC WOODEN FENCE
-  // --------------------------------------------------------------------------
-  private renderIsometricFence(buffer: SceneBuffer): void {
-    const x0 = 30;
-    const y0 = 185;
-    const x1 = 95;
-    const y1 = 217;
+    // Low drifting mist band behind the courtyard.
+    const mist = buffer.geometryCtx.createLinearGradient(0, 45, 0, 105);
+    mist.addColorStop(0, 'rgba(70, 100, 130, 0)');
+    mist.addColorStop(0.5, 'rgba(70, 100, 130, 0.12)');
+    mist.addColorStop(1, 'rgba(20, 35, 55, 0)');
+    buffer.geometryCtx.fillStyle = mist;
+    buffer.geometryCtx.fillRect(0, 45, buffer.width, 60);
 
-    // Drop shadow under fence
-    buffer.drawGroundShadow([
-      { x: x0, y: y0 + 6 },
-      { x: x1, y: y1 + 6 },
-      { x: x1 + 8, y: y1 + 10 },
-      { x: x0 + 8, y: y0 + 10 },
-    ], 0.5);
-
-    // Horizontal rails along 2:1 slope
-    const railPts1 = [
-      { x: x0, y: y0 - 3 },
-      { x: x1, y: y1 - 3 },
-      { x: x1, y: y1 - 1 },
-      { x: x0, y: y0 - 1 },
-    ];
-    buffer.drawPolygon(railPts1, '#442b1a', Material.WOOD, Surface.HORIZONTAL);
-
-    const railPts2 = [
-      { x: x0, y: y0 - 9 },
-      { x: x1, y: y1 - 9 },
-      { x: x1, y: y1 - 7 },
-      { x: x0, y: y0 - 7 },
-    ];
-    buffer.drawPolygon(railPts2, '#442b1a', Material.WOOD, Surface.HORIZONTAL);
-
-    // Vertical posts along front fence
-    const numPosts = 4;
-    for (let i = 0; i < numPosts; i++) {
-      const t = i / (numPosts - 1);
-      const px = Math.round(x0 + t * (x1 - x0));
-      const py = Math.round(y0 + t * (y1 - y0));
-      buffer.drawRect(px - 2, py - 14, 4, 16, '#543621', Material.WOOD, Surface.VERTICAL);
-      buffer.drawRect(px - 1, py - 14, 2, 16, '#6b452b', Material.WOOD, Surface.VERTICAL);
-      buffer.drawRect(px - 3, py - 16, 6, 3, '#2a1a10', Material.WOOD, Surface.HORIZONTAL);
+    // Flagstone approach path. Near stones are visibly larger due to perspective.
+    for (let i = 0; i < 8; i++) {
+      const t = i / 7;
+      const x = -66 + 51 * t + Math.sin(i * 1.7) * 4;
+      const y = -190 + 165 * t;
+      const rx = 13 + t * 5;
+      const ry = 7 + t * 3;
+      this.drawFlatShadow(buffer, x + 2, y + 2, 0.08, rx + 2, ry + 2, 0.55);
+      this.drawWorldEllipse(buffer, x, y + 1, 0.25, rx, ry, '#202a34', Material.STONE, Surface.VERTICAL);
+      this.drawWorldEllipse(buffer, x, y, 0.55, rx - 1, ry - 1, '#465463', Material.STONE);
     }
   }
 
   // --------------------------------------------------------------------------
-  // 3D GNARLED PINE TREE (MATSU)
+  // Terrace, dojo and roof
   // --------------------------------------------------------------------------
-  private renderPineTree(buffer: SceneBuffer): void {
-    const tx = 345;
-    const ty = 100;
 
-    // 1. Circular Ground Shadow at the base of the trunk
-    buffer.drawGroundShadow([
-      { x: tx - 18, y: ty + 24 },
-      { x: tx + 24, y: ty + 24 },
-      { x: tx + 34, y: ty + 38 },
-      { x: tx - 8, y: ty + 38 },
-    ], 0.6);
+  private renderTerrace(buffer: SceneBuffer): void {
+    this.drawBox(
+      buffer,
+      { x: -135, y: -5, z: 0 },
+      { x: 135, y: 175, z: 10 },
+      '#3a4654',
+      Material.STONE
+    );
 
-    // 2. Thick 3D Gnarled Trunk with bark texture
-    const trunkPts = [
-      { x: tx - 8, y: ty + 26 },
-      { x: tx + 8, y: ty + 26 },
-      { x: tx + 5, y: ty + 4 },
-      { x: tx - 5, y: ty - 12 },
-      { x: tx - 14, y: ty - 28 },
-      { x: tx - 10, y: ty - 32 },
-      { x: tx + 3, y: ty - 18 },
-      { x: tx + 10, y: ty + 2 },
+    // Paving joints on the terrace top.
+    for (const x of [-90, -45, 0, 45, 90]) {
+      this.drawLine3D(buffer, { x, y: 0, z: 10.2 }, { x, y: 170, z: 10.2 }, '#202a35', 0.8);
+    }
+    for (const y of [25, 65, 105, 145]) {
+      this.drawLine3D(buffer, { x: -130, y, z: 10.2 }, { x: 130, y, z: 10.2 }, '#202a35', 0.8);
+    }
+
+    // Stone courses on the visible retaining faces.
+    for (const z of [3, 6]) {
+      this.drawLine3D(buffer, { x: -135, y: -5.2, z }, { x: 135, y: -5.2, z }, '#1c2631', 0.8);
+      this.drawLine3D(buffer, { x: 135.2, y: -5, z }, { x: 135.2, y: 175, z }, '#17202b', 0.8);
+    }
+
+    // Broad steps centered on the approach path.
+    this.drawBox(buffer, { x: -38, y: -31, z: 0 }, { x: 2, y: -23, z: 2 }, '#465362', Material.STONE);
+    this.drawBox(buffer, { x: -38, y: -23, z: 0 }, { x: 2, y: -15, z: 5 }, '#414e5d', Material.STONE);
+    this.drawBox(buffer, { x: -38, y: -15, z: 0 }, { x: 2, y: -6, z: 8 }, '#3b4857', Material.STONE);
+  }
+
+  private renderDojo(buffer: SceneBuffer): void {
+    this.drawPolygonShadow(buffer, [
+      { x: -112, y: 18, z: 10.4 },
+      { x: 112, y: 18, z: 10.4 },
+      { x: 172, y: 188, z: 10.4 },
+      { x: -52, y: 188, z: 10.4 },
+    ], 0.48);
+
+    // Engawa platform.
+    this.drawBox(
+      buffer,
+      { x: -98, y: 12, z: 10 },
+      { x: 98, y: 148, z: 16 },
+      '#5a3b25',
+      Material.WOOD
+    );
+
+    // Main timber walls.
+    this.drawBox(
+      buffer,
+      { x: -82, y: 28, z: 16 },
+      { x: 82, y: 132, z: 58 },
+      '#3b2b22',
+      Material.WOOD
+    );
+
+    // Corner and bay posts.
+    for (const x of [-82, -28, 28, 82]) {
+      this.drawBox(buffer, { x: x - 2, y: 26, z: 16 }, { x: x + 2, y: 31, z: 62 }, '#24170f', Material.WOOD);
+    }
+    for (const y of [28, 132]) {
+      this.drawBox(buffer, { x: -84, y: y - 2, z: 16 }, { x: -79, y: y + 2, z: 62 }, '#24170f', Material.WOOD);
+      this.drawBox(buffer, { x: 79, y: y - 2, z: 16 }, { x: 84, y: y + 2, z: 62 }, '#180f0b', Material.WOOD);
+    }
+
+    // Glowing shoji panels on the camera-facing wall.
+    const bays = [
+      { x0: -75, x1: -35, color: '#e7b85f' },
+      { x0: -31, x1: 9, color: '#f4cb76' },
+      { x0: 13, x1: 53, color: '#f8d384' },
+      { x0: 57, x1: 75, color: '#dca94f' },
     ];
-    buffer.drawPolygon(trunkPts, '#24160e', Material.WOOD, Surface.VERTICAL);
-    buffer.drawRect(tx - 3, ty - 8, 3, 28, '#3d2518', Material.WOOD, Surface.VERTICAL);
+    for (const bay of bays) {
+      this.drawFace(buffer, {
+        points: [
+          { x: bay.x0, y: 27.8, z: 20 },
+          { x: bay.x1, y: 27.8, z: 20 },
+          { x: bay.x1, y: 27.8, z: 52 },
+          { x: bay.x0, y: 27.8, z: 52 },
+        ],
+        normal: { x: 0, y: -1, z: 0 },
+        color: bay.color,
+        material: Material.SHOJI,
+        surface: Surface.VERTICAL,
+        emissive: true,
+      });
+      this.drawLine3D(buffer, { x: bay.x0, y: 27.5, z: 20 }, { x: bay.x0, y: 27.5, z: 52 }, '#4a2c16', 1.1);
+      this.drawLine3D(buffer, { x: bay.x0, y: 27.5, z: 52 }, { x: bay.x1, y: 27.5, z: 52 }, '#4a2c16', 1.1);
+      this.drawLine3D(buffer, { x: bay.x1, y: 27.5, z: 52 }, { x: bay.x1, y: 27.5, z: 20 }, '#4a2c16', 1.1);
+      this.drawLine3D(buffer, { x: bay.x1, y: 27.5, z: 20 }, { x: bay.x0, y: 27.5, z: 20 }, '#4a2c16', 1.1);
+    }
 
-    // Branches reaching leftward over pond
-    buffer.drawRect(tx - 38, ty - 24, 26, 5, '#24160e', Material.WOOD, Surface.HORIZONTAL);
-    buffer.drawRect(tx - 52, ty - 6, 38, 4, '#24160e', Material.WOOD, Surface.HORIZONTAL);
+    // Dimmer shoji window on the right wall.
+    this.drawFace(buffer, {
+      points: [
+        { x: 82.2, y: 62, z: 25 },
+        { x: 82.2, y: 104, z: 25 },
+        { x: 82.2, y: 104, z: 46 },
+        { x: 82.2, y: 62, z: 46 },
+      ],
+      normal: { x: 1, y: 0, z: 0 },
+      color: '#a97932',
+      material: Material.SHOJI,
+      surface: Surface.VERTICAL,
+      emissive: true,
+    });
 
-    // 3. Layered Cloud-Pruned Foliage Pads (2:1 Isometric Canopies)
-    const canopies = [
-      { x: tx - 12, y: ty - 42, rx: 22, ry: 11 },
-      { x: tx - 42, y: ty - 26, rx: 20, ry: 10 },
-      { x: tx + 16, y: ty - 34, rx: 18, ry: 9 },
-      { x: tx - 54, y: ty - 8, rx: 22, ry: 11 },
-      { x: tx + 12, y: ty - 12, rx: 16, ry: 8 },
+    // Roof fascia gives the broad roof planes physical thickness.
+    this.drawBox(buffer, { x: -101, y: 7, z: 59 }, { x: 101, y: 12, z: 63 }, '#1b2838', Material.ROOF_TILES);
+    this.drawBox(buffer, { x: 97, y: 10, z: 59 }, { x: 102, y: 151, z: 63 }, '#152130', Material.ROOF_TILES);
+
+    const roofColor = '#405873';
+    this.drawFace(buffer, {
+      points: [
+        { x: -100, y: 10, z: 62 }, { x: 100, y: 10, z: 62 },
+        { x: 45, y: 80, z: 98 }, { x: -45, y: 80, z: 98 },
+      ],
+      normal: normalize({ x: 0, y: -1, z: 0.55 }),
+      color: roofColor,
+      material: Material.ROOF_TILES,
+      surface: Surface.SLOPE_LEFT,
+    });
+    this.drawFace(buffer, {
+      points: [
+        { x: -45, y: 80, z: 98 }, { x: 45, y: 80, z: 98 },
+        { x: 100, y: 150, z: 62 }, { x: -100, y: 150, z: 62 },
+      ],
+      normal: normalize({ x: 0, y: 1, z: 0.55 }),
+      color: roofColor,
+      material: Material.ROOF_TILES,
+      surface: Surface.SLOPE_RIGHT,
+    });
+    this.drawFace(buffer, {
+      points: [
+        { x: -100, y: 10, z: 62 }, { x: -45, y: 80, z: 98 }, { x: -100, y: 150, z: 62 },
+      ],
+      normal: normalize({ x: -1, y: 0, z: 0.45 }),
+      color: roofColor,
+      material: Material.ROOF_TILES,
+      surface: Surface.SLOPE_LEFT,
+    });
+    this.drawFace(buffer, {
+      points: [
+        { x: 100, y: 10, z: 62 }, { x: 100, y: 150, z: 62 }, { x: 45, y: 80, z: 98 },
+      ],
+      normal: normalize({ x: 1, y: 0, z: 0.45 }),
+      color: roofColor,
+      material: Material.ROOF_TILES,
+      surface: Surface.SLOPE_RIGHT,
+    });
+
+    // Ridge, upturned eave tips and tile courses.
+    this.drawBox(buffer, { x: -48, y: 77, z: 96 }, { x: 48, y: 83, z: 101 }, '#6f8ba8', Material.ROOF_TILES);
+    for (const x of [-100, 100]) {
+      for (const y of [10, 150]) {
+        this.drawBox(buffer, { x: x - 3, y: y - 3, z: 62 }, { x: x + 3, y: y + 3, z: 67 }, '#587593', Material.ROOF_TILES);
+      }
+    }
+    for (const t of [0.25, 0.5, 0.75]) {
+      const halfWidth = 100 - 55 * t;
+      const y = 10 + 70 * t;
+      const z = 62 + 36 * t;
+      this.drawLine3D(buffer, { x: -halfWidth, y, z }, { x: halfWidth, y, z }, '#25374b', 0.75);
+    }
+    this.drawLine3D(buffer, { x: -100, y: 10, z: 62.4 }, { x: 100, y: 10, z: 62.4 }, '#86a5c2', 1.1);
+    this.drawLine3D(buffer, { x: -48, y: 80, z: 101.2 }, { x: 48, y: 80, z: 101.2 }, '#b2c9de', 1.2);
+
+    // Hanging lantern under the front eave.
+    this.drawCylinder(buffer, -55, 8, 46, 58, 4, 4, '#ffb347', Material.LANTERN, true, 10);
+    this.drawCylinder(buffer, -55, 8, 58, 60, 4.5, 4.5, '#2b180d', Material.WOOD, false, 10);
+    this.drawCylinder(buffer, -55, 8, 44, 46, 4.5, 4.5, '#2b180d', Material.WOOD, false, 10);
+  }
+
+  // --------------------------------------------------------------------------
+  // Garden objects
+  // --------------------------------------------------------------------------
+
+  private renderPineTree(buffer: SceneBuffer, gameTime: number): void {
+    const sway = Math.sin(gameTime * 0.65) * 2.2 + Math.sin(gameTime * 1.37) * 0.8;
+    this.drawFlatShadow(buffer, 174, 166, 0.1, 58, 30, 0.62);
+    this.drawCylinder(buffer, 165, 150, 0, 78, 7, 4, '#2b1a10', Material.WOOD, false, 8);
+    this.drawBranch(buffer, { x: 165, y: 150, z: 48 }, { x: 132 + sway, y: 145, z: 73 }, 5, '#24160e');
+    this.drawBranch(buffer, { x: 165, y: 150, z: 56 }, { x: 198 + sway, y: 154, z: 76 }, 4, '#24160e');
+    this.drawBranch(buffer, { x: 165, y: 150, z: 66 }, { x: 158 + sway, y: 158, z: 91 }, 4, '#24160e');
+
+    const pads = [
+      { x: 145 + sway, y: 148, z: 73, rx: 39, ry: 21 },
+      { x: 188 + sway, y: 145, z: 82, rx: 35, ry: 19 },
+      { x: 160 + sway, y: 160, z: 94, rx: 34, ry: 18 },
+      { x: 126 + sway, y: 156, z: 86, rx: 29, ry: 16 },
+      { x: 177 + sway, y: 166, z: 88, rx: 27, ry: 15 },
     ];
+    for (const pad of pads) {
+      this.drawWorldEllipse(buffer, pad.x, pad.y, pad.z - 2, pad.rx, pad.ry, '#07130f', Material.FOLIAGE);
+      this.drawWorldEllipse(buffer, pad.x, pad.y, pad.z, pad.rx, pad.ry, '#173c2d', Material.FOLIAGE);
+      this.drawWorldEllipse(buffer, pad.x - 6, pad.y - 3, pad.z + 1, pad.rx * 0.62, pad.ry * 0.55, '#245640', Material.FOLIAGE);
+    }
+  }
 
-    for (const c of canopies) {
-      // Underside shadow
-      buffer.geometryCtx.fillStyle = '#0a1a14';
-      buffer.geometryCtx.beginPath();
-      buffer.geometryCtx.ellipse(c.x, c.y + 2, c.rx, c.ry, 0, 0, Math.PI * 2);
-      buffer.geometryCtx.fill();
+  private renderPondAndBridge(buffer: SceneBuffer): void {
+    this.drawWorldEllipse(buffer, 172, 72, 0.1, 72, 44, '#050b10', Material.NONE);
+    this.drawWorldEllipse(buffer, 170, 70, 0.25, 70, 43, '#2a3642', Material.STONE);
+    this.drawWorldEllipse(buffer, 170, 70, 0.45, 63, 36, '#12344a', Material.WATER);
 
-      // Main foliage body
-      buffer.drawEllipse(c.x, c.y, c.rx - 1, c.ry - 1, '#112e22', Material.FOLIAGE, Surface.HORIZONTAL);
+    // Wooden footbridge planks and low rails.
+    for (let i = 0; i < 8; i++) {
+      const x = 116 + i * 14;
+      this.drawBox(buffer, { x, y: 61, z: 1.5 }, { x: x + 13, y: 79, z: 4 }, '#62412a', Material.WOOD);
+    }
+    for (const y of [58, 82]) {
+      this.drawBox(buffer, { x: 114, y, z: 8 }, { x: 222, y: y + 3, z: 10 }, '#3c281b', Material.WOOD);
+      for (const x of [122, 158, 194, 216]) {
+        this.drawBox(buffer, { x, y, z: 3 }, { x: x + 3, y: y + 3, z: 12 }, '#432d1d', Material.WOOD);
+      }
+    }
 
-      // Top moonlit highlight
-      buffer.geometryCtx.fillStyle = '#1c4a37';
-      buffer.geometryCtx.beginPath();
-      buffer.geometryCtx.ellipse(c.x - 2, c.y - 2, c.rx * 0.65, c.ry * 0.5, 0, 0, Math.PI * 2);
-      buffer.geometryCtx.fill();
+    // Sparse reflected moon ripples.
+    for (const line of [
+      [{ x: 145, y: 62, z: 0.6 }, { x: 169, y: 62, z: 0.6 }],
+      [{ x: 178, y: 78, z: 0.6 }, { x: 205, y: 78, z: 0.6 }],
+      [{ x: 151, y: 88, z: 0.6 }, { x: 176, y: 88, z: 0.6 }],
+    ]) {
+      this.drawLine3D(buffer, line[0], line[1], '#4c7894', 0.8);
+    }
+
+    // A few embankment rocks break the pond silhouette.
+    for (const rock of [
+      { x: 116, y: 83, rx: 8, ry: 5 },
+      { x: 211, y: 47, rx: 9, ry: 6 },
+      { x: 224, y: 91, rx: 7, ry: 5 },
+    ]) {
+      this.drawWorldEllipse(buffer, rock.x, rock.y, 0.7, rock.rx, rock.ry, '#3d4a57', Material.STONE);
+    }
+  }
+
+  private renderFence(buffer: SceneBuffer): void {
+    for (let y = -30; y <= 150; y += 45) {
+      this.drawBox(buffer, { x: -178, y, z: 0 }, { x: -173, y: y + 5, z: 27 }, '#543621', Material.WOOD);
+      this.drawBox(buffer, { x: -180, y: y - 1, z: 25 }, { x: -171, y: y + 6, z: 29 }, '#2a1a10', Material.WOOD);
+    }
+    this.drawBox(buffer, { x: -177, y: -30, z: 10 }, { x: -174, y: 155, z: 13 }, '#442b1a', Material.WOOD);
+    this.drawBox(buffer, { x: -177, y: -30, z: 19 }, { x: -174, y: 155, z: 22 }, '#442b1a', Material.WOOD);
+  }
+
+  private renderTorii(buffer: SceneBuffer): void {
+    this.drawPolygonShadow(buffer, [
+      { x: -104, y: -101, z: 0.1 }, { x: -2, y: -101, z: 0.1 },
+      { x: 30, y: -54, z: 0.1 }, { x: -72, y: -54, z: 0.1 },
+    ], 0.62);
+
+    for (const x of [-90, -10]) {
+      this.drawCylinder(buffer, x, -90, 0, 5, 6, 6, '#2c3641', Material.STONE, false, 10);
+      this.drawCylinder(buffer, x, -90, 5, 70, 4.2, 3.4, '#b52b22', Material.TORII, false, 10);
+    }
+
+    this.drawBox(buffer, { x: -97, y: -94, z: 43 }, { x: -3, y: -86, z: 48 }, '#c33427', Material.TORII);
+    this.drawBox(buffer, { x: -106, y: -95, z: 63 }, { x: 6, y: -85, z: 69 }, '#d13a2c', Material.TORII);
+    this.drawBox(buffer, { x: -111, y: -96, z: 68 }, { x: -101, y: -84, z: 73 }, '#b52b22', Material.TORII);
+    this.drawBox(buffer, { x: 1, y: -96, z: 68 }, { x: 11, y: -84, z: 73 }, '#b52b22', Material.TORII);
+    this.drawBox(buffer, { x: -109, y: -96, z: 70 }, { x: 9, y: -84, z: 73 }, '#182028', Material.WOOD);
+    this.drawLine3D(buffer, { x: -104, y: -96.2, z: 69.2 }, { x: 4, y: -96.2, z: 69.2 }, '#ff7560', 1);
+  }
+
+  private renderStoneLantern(buffer: SceneBuffer): void {
+    const x = -4;
+    const y = -34;
+    this.drawFlatShadow(buffer, x + 8, y + 8, 0.1, 18, 11, 0.58);
+    this.drawCylinder(buffer, x, y, 0, 4, 10, 8, '#303b47', Material.STONE, false, 8);
+    this.drawBox(buffer, { x: x - 3, y: y - 3, z: 4 }, { x: x + 3, y: y + 3, z: 24 }, '#465362', Material.STONE);
+    this.drawBox(buffer, { x: x - 7, y: y - 6, z: 23 }, { x: x + 7, y: y + 6, z: 31 }, '#ffab32', Material.LANTERN, Surface.VERTICAL, Surface.HORIZONTAL, true);
+    this.drawBox(buffer, { x: x - 10, y: y - 9, z: 30 }, { x: x + 10, y: y + 9, z: 33 }, '#2d3946', Material.STONE);
+
+    const apex = { x, y, z: 43 };
+    const roofBase = [
+      { x: x - 13, y: y - 11, z: 33 },
+      { x: x + 13, y: y - 11, z: 33 },
+      { x: x + 13, y: y + 11, z: 33 },
+      { x: x - 13, y: y + 11, z: 33 },
+    ];
+    for (let i = 0; i < 4; i++) {
+      const a = roofBase[i];
+      const b = roofBase[(i + 1) % 4];
+      const normal = normalize({
+        x: (a.x + b.x) * 0.5 - x,
+        y: (a.y + b.y) * 0.5 - y,
+        z: 8,
+      });
+      this.drawFace(buffer, {
+        points: [a, b, apex],
+        normal,
+        color: '#4b5968',
+        material: Material.STONE,
+        surface: normal.x < 0 ? Surface.SLOPE_LEFT : Surface.SLOPE_RIGHT,
+      });
+    }
+    this.drawCylinder(buffer, x, y, 43, 46, 2.5, 1.5, '#68788a', Material.STONE, false, 8);
+  }
+
+  // --------------------------------------------------------------------------
+  // Dynamic atmosphere
+  // --------------------------------------------------------------------------
+
+  private renderFireflies(buffer: SceneBuffer, gameTime: number): void {
+    for (let i = 0; i < CONFIG.atmosphere.fireflies; i++) {
+      const angle = i * 2.399 + gameTime * (0.12 + (i % 3) * 0.035);
+      const radius = 28 + (i % 4) * 13;
+      const x = 142 + Math.cos(angle) * radius + Math.sin(gameTime * 0.7 + i) * 5;
+      const y = 52 + Math.sin(angle * 1.3) * radius * 0.65;
+      const z = 8 + (i % 5) * 4 + Math.sin(gameTime * 1.1 + i * 0.8) * 3;
+      const point = this.project({ x, y, z });
+      const pulse = 0.5 + 0.5 * Math.sin(gameTime * 2.2 + i * 1.7);
+      buffer.drawCircle(
+        point.x,
+        point.y,
+        0.65 + pulse * 0.65,
+        pulse > 0.45 ? '#d8f59a' : '#527a45',
+        Material.FIRE,
+        Surface.HORIZONTAL
+      );
+    }
+  }
+
+  private renderDriftingMist(buffer: SceneBuffer, gameTime: number): void {
+    const ctx = buffer.geometryCtx;
+    for (let layer = 0; layer < CONFIG.atmosphere.fogLayers; layer++) {
+      const span = buffer.width + 260;
+      const x = ((gameTime * (3.5 + layer * 1.7) + layer * 173) % span) - 130;
+      const y = 62 + layer * 17 + Math.sin(gameTime * 0.23 + layer) * 5;
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.scale(2.8, 0.42);
+      const fog = ctx.createRadialGradient(0, 0, 0, 0, 0, 85);
+      fog.addColorStop(0, 'rgba(105, 140, 165, 0.13)');
+      fog.addColorStop(0.55, 'rgba(65, 95, 125, 0.07)');
+      fog.addColorStop(1, 'rgba(20, 35, 55, 0)');
+      ctx.fillStyle = fog;
+      ctx.fillRect(-85, -85, 170, 170);
+      ctx.restore();
     }
   }
 
   // --------------------------------------------------------------------------
-  // LANTERNS (HANGING CHŌCHIN & STONE TŌRŌ)
+  // Dynamic lighting
   // --------------------------------------------------------------------------
-  private renderLanterns(buffer: SceneBuffer): void {
-    // 1. Hanging Paper Lantern at Dojo Front Corner
-    const lx = 230;
-    const ly = 96;
 
-    // Cord suspended from eave
-    buffer.drawRect(lx + 2, ly - 8, 2, 8, '#1e120a', Material.WOOD, Surface.VERTICAL);
-    // Caps
-    buffer.drawRect(lx - 2, ly - 1, 10, 2, '#2e180d', Material.WOOD, Surface.HORIZONTAL);
-    buffer.drawRect(lx - 2, ly + 11, 10, 2, '#2e180d', Material.WOOD, Surface.HORIZONTAL);
-    // Glowing paper body
-    buffer.drawRect(lx, ly + 1, 6, 10, '#ffa834', Material.LANTERN, Surface.CYLINDER);
-    buffer.drawRect(lx + 1, ly + 2, 4, 8, '#fff3c4', Material.LANTERN, Surface.CYLINDER);
+  private renderLighting(buffer: SceneBuffer, w: number, h: number, gameTime: number): void {
+    const ctx = buffer.lightCtx;
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    const moonWash = ctx.createLinearGradient(0, 0, w, h);
+    moonWash.addColorStop(0, 'rgba(105, 145, 190, 0.38)');
+    moonWash.addColorStop(0.55, 'rgba(45, 75, 115, 0.16)');
+    moonWash.addColorStop(1, 'rgba(8, 18, 34, 0.04)');
+    ctx.fillStyle = moonWash;
+    ctx.fillRect(0, 0, w, h);
+    ctx.restore();
 
-    // 2. Stone Garden Lantern (Tōrō) along Path
-    const tx = 152;
-    const ty = 168;
-
-    // Ground shadow
-    buffer.drawGroundShadow([
-      { x: tx - 6, y: ty + 12 },
-      { x: tx + 12, y: ty + 12 },
-      { x: tx + 18, y: ty + 18 },
-      { x: tx, y: ty + 18 },
-    ], 0.6);
-
-    // Pedestal
-    buffer.drawRect(tx - 5, ty + 9, 12, 4, '#242b33', Material.STONE, Surface.HORIZONTAL);
-    buffer.drawRect(tx - 3, ty + 6, 8, 3, '#303944', Material.STONE, Surface.HORIZONTAL);
-    buffer.drawRect(tx - 2, ty + 1, 5, 6, '#3d4855', Material.STONE, Surface.VERTICAL);
-
-    // Glowing Firebox Window (Hibukuro)
-    buffer.drawRect(tx - 3, ty - 5, 8, 5, '#ffa02a', Material.LANTERN, Surface.VERTICAL);
-    buffer.drawRect(tx - 2, ty - 4, 5, 3, '#fff2b8', Material.LANTERN, Surface.VERTICAL);
-
-    // Umbrella Roof Cap (Kasa)
-    const roofPts = [
-      { x: tx - 8, y: ty - 4 },
-      { x: tx + 10, y: ty - 4 },
-      { x: tx + 3, y: ty - 9 },
-      { x: tx - 1, y: ty - 9 },
-    ];
-    buffer.drawPolygon(roofPts, '#3e4a57', Material.STONE, Surface.HORIZONTAL);
-    buffer.drawRect(tx, ty - 11, 2, 2, '#5c6c7d', Material.STONE, Surface.HORIZONTAL);
-  }
-
-  // --------------------------------------------------------------------------
-  // DYNAMIC 2D LIGHTING MAP
-  // --------------------------------------------------------------------------
-  private renderLighting(buffer: SceneBuffer, w: number, _h: number, gameTime: number): void {
-    // 1. Hanging Paper Lantern at Central Corner
-    const lx = 230;
-    const ly = 96;
     const flicker =
-      Math.sin(gameTime * 6.8) * 0.07 +
-      Math.cos(gameTime * 15.2) * 0.04 +
-      Math.sin(gameTime * 29.5) * 0.02;
-    const lRadius = Math.round(w * 0.17 * (1.0 + flicker));
+      Math.sin(gameTime * 6.8) * 0.06 +
+      Math.cos(gameTime * 15.2) * 0.035 +
+      Math.sin(gameTime * 29.5) * 0.015;
 
-    buffer.addLight(lx + 3, ly + 6, lRadius, [
-      { stop: 0.0, color: 'rgba(255, 230, 150, 0.95)' },
-      { stop: 0.25, color: 'rgba(255, 155, 35, 0.75)' },
-      { stop: 0.65, color: 'rgba(210, 95, 15, 0.35)' },
-      { stop: 1.0, color: 'rgba(0, 0, 0, 0)' },
+    const hanging = this.project({ x: -55, y: 8, z: 52 });
+    buffer.addLight(hanging.x, hanging.y, 43 * (1 + flicker), [
+      { stop: 0, color: 'rgba(255, 235, 170, 0.95)' },
+      { stop: 0.25, color: 'rgba(255, 165, 45, 0.72)' },
+      { stop: 0.7, color: 'rgba(190, 75, 10, 0.24)' },
+      { stop: 1, color: 'rgba(0, 0, 0, 0)' },
     ]);
 
-    // 2. Shoji Interior Glow (Spilling out from left and right walls)
-    buffer.addLight(195, 105, w * 0.18, [
-      { stop: 0.0, color: 'rgba(255, 220, 110, 0.55)' },
-      { stop: 0.5, color: 'rgba(220, 140, 40, 0.25)' },
-      { stop: 1.0, color: 'rgba(0, 0, 0, 0)' },
+    const windows = this.project({ x: 0, y: 25, z: 38 });
+    buffer.addLight(windows.x, windows.y, 78, [
+      { stop: 0, color: 'rgba(255, 210, 105, 0.52)' },
+      { stop: 0.55, color: 'rgba(210, 125, 35, 0.20)' },
+      { stop: 1, color: 'rgba(0, 0, 0, 0)' },
     ]);
 
-    // 3. Stone Garden Lantern Glow along Path
-    const tx = 152;
-    const ty = 168;
-    const tRadius = Math.round(w * 0.10 * (1.0 + flicker * 0.6));
-
-    buffer.addLight(tx + 1, ty - 2, tRadius, [
-      { stop: 0.0, color: 'rgba(255, 215, 120, 0.85)' },
-      { stop: 0.35, color: 'rgba(255, 135, 25, 0.55)' },
-      { stop: 0.75, color: 'rgba(180, 75, 10, 0.20)' },
-      { stop: 1.0, color: 'rgba(0, 0, 0, 0)' },
+    const stoneLantern = this.project({ x: -4, y: -34, z: 27 });
+    buffer.addLight(stoneLantern.x, stoneLantern.y, 34 * (1 + flicker * 0.7), [
+      { stop: 0, color: 'rgba(255, 220, 135, 0.90)' },
+      { stop: 0.35, color: 'rgba(255, 145, 30, 0.52)' },
+      { stop: 1, color: 'rgba(0, 0, 0, 0)' },
     ]);
 
-    // 4. Cool Moonlit Wash over Pond & Pine Canopy
-    buffer.addLight(295, 175, w * 0.22, [
-      { stop: 0.0, color: 'rgba(120, 180, 240, 0.30)' },
-      { stop: 0.6, color: 'rgba(60, 110, 170, 0.12)' },
-      { stop: 1.0, color: 'rgba(0, 0, 0, 0)' },
+    const pond = this.project({ x: 170, y: 70, z: 0 });
+    buffer.addLight(pond.x, pond.y, 66, [
+      { stop: 0, color: 'rgba(105, 165, 220, 0.30)' },
+      { stop: 0.6, color: 'rgba(45, 95, 150, 0.12)' },
+      { stop: 1, color: 'rgba(0, 0, 0, 0)' },
+    ]);
+
+    buffer.addLight(338, 28, 38, [
+      { stop: 0, color: 'rgba(150, 195, 235, 0.30)' },
+      { stop: 0.45, color: 'rgba(70, 115, 170, 0.12)' },
+      { stop: 1, color: 'rgba(0, 0, 0, 0)' },
     ]);
   }
 }

@@ -29,7 +29,8 @@ export class DebugOverlay {
       `║ Grid: ${densityKey.toUpperCase()} (${cols}x${rows}) | Cells: ${(cols * rows).toLocaleString()} | Scale: ${CONFIG.render.bufferScale}x   ║`,
       `║ Ramp [F4]: ${activeRamp.name.padEnd(20)} [${activeRamp.chars.substring(0, 10)}...] ║`,
       `║ F1: Scene Buffer [${CONFIG.debug.showSceneBuffer ? 'ON ' : 'OFF'}] | F2: Material Buffer [${CONFIG.debug.showMaterialBuffer ? 'ON ' : 'OFF'}]         ║`,
-      `║ Keys: [1] Low [2] Med [3] High | F3: Toggle HUD                   ║`,
+      `║ Keys: [1] Low [2] Med [3] High | Wheel / + / -: Zoom | [0]: Reset   ║`,
+      `║ F3: Toggle HUD                                                       ║`,
       '╚═══════════════════════════════════════════════════════════════════╝',
     ];
 

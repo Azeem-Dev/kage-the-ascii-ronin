@@ -15,14 +15,14 @@ export const CONFIG = {
     targetFps: 60,
     aspectRatio: 16 / 9,
     fontFamily: '"Cascadia Code", "Fira Code", "Courier New", monospace',
-    fontSize: 12,
-    cellWidth: 9,
-    cellHeight: 14,
+    fontSize: 8,
+    cellWidth: 6,
+    cellHeight: 6,
     defaultDensity: 'high' as 'low' | 'medium' | 'high',
     densities: {
-      low: { name: 'Low (140x50)', cols: 140, rows: 50 },
-      medium: { name: 'Medium (170x61)', cols: 170, rows: 61 },
-      high: { name: 'High (200x72)', cols: 200, rows: 72 },
+      low: { name: 'Low (192x108)', cols: 192, rows: 108 },
+      medium: { name: 'Medium (256x144)', cols: 256, rows: 144 },
+      high: { name: 'High (320x180)', cols: 320, rows: 180 },
     } as Record<'low' | 'medium' | 'high', GridDensityConfig>,
   },
 
@@ -34,7 +34,7 @@ export const CONFIG = {
     bufferScale: 2,
     
     // Sobel edge detection threshold on physical geometry (0-255)
-    edgeThreshold: 28,
+    edgeThreshold: 36,
     
     // Color saturation & brightness boost for the glowing ASCII terminal look
     saturationBoost: 1.25,
@@ -81,6 +81,13 @@ export const CONFIG = {
     },
   },
 
+  // Dynamic atmosphere settings
+  atmosphere: {
+    rainDrops: 64,
+    fogLayers: 3,
+    fireflies: 10,
+  },
+
   // Feudal Japan night atmosphere colors
   palette: {
     skyTop: '#040814',
@@ -103,6 +110,6 @@ export const CONFIG = {
   debug: {
     showSceneBuffer: false,   // F1
     showMaterialBuffer: false,// F2
-    showStats: true,          // F3
+    showStats: false,          // F3
   },
 };

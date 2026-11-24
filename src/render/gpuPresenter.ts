@@ -79,15 +79,18 @@ export class GpuPresenter {
             if (base > 0.) {
               // Slow, gentle ripple: rows shift by at most one cell, so the reflection stays a calm image.
               float wobble = sin(cell.y * .35 + time * 1.1) * .62;
-              vec2 src = vec2(cell.x + floor(wobble + .5), cell.y - 2. * base + 1.);
+              // Squash the mirror image (reads as water, not a second object) and cut it with ripple bands.
+              vec2 src = vec2(cell.x + floor(wobble + .5), cell.y - base - floor((base - 1.) * 1.6));
               float l = layerAt(src);
-              if (src.y >= 0. && l > 1.5 && l < 3.5) {
+              float rippleGap = step(.45, sin(cell.y * 1.9 + time * 1.3 + sin(cell.x * .15) * 1.5));
+              if (src.y >= 0. && l > 1.5 && l < 3.5 && rippleGap < .5) {
                 vec2 stc = (src + .5) / grid;
                 vec4 sf = texture2D(tFg, stc); vec4 sb = texture2D(tBg, stc);
                 float sm = glyphMask(sf, sb, vec2(local.x, 1. - local.y));   // upside down
-                float fade = clamp(1. - base / 34., .25, 1.) * (.93 + .07 * sin(time * 1.3 + cell.y * .4));
-                vec3 tint = vec3(.62, .74, .92);
-                srgb = mix(srgb, mix(sb.rgb * .55, sf.rgb * tint * .95, sm) * fade + srgb * (1. - fade) * .35, .9);
+                float fade = clamp(1. - base / 16., 0., 1.);
+                vec3 tint = vec3(.5, .62, .8);
+                // Dark water reflection: about half brightness, fading quickly with depth.
+                srgb = mix(srgb, mix(sb.rgb * .3, sf.rgb * tint * .5, sm), .75 * fade);
                 srgb.g += debugWater * .5;
               }
             }

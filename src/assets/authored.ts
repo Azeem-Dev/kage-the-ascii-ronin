@@ -9,9 +9,30 @@ export interface GlyphArt {
   ink: number[];
 }
 
+const legCache = new WeakMap<GlyphArt, number[]>();
+/** Centres of the real legs: separate runs of ink in the hoof rows. Each column of the
+ * lower body is then owned by its nearest leg, so a leg always moves as one piece
+ * (fixed vertical strips split a leg in two and made it look doubled). */
+function legCentres(art: GlyphArt): number[] {
+  const cached = legCache.get(art);
+  if (cached) return cached;
+  const ink = new Uint16Array(art.width);
+  for (let y = Math.floor(art.height * .82); y < art.height; y++) for (let x = 0; x < art.width; x++) if (art.ink[y * art.width + x]) ink[x]++;
+  const centres: number[] = [];
+  let start = -1;
+  for (let x = 0; x <= art.width; x++) {
+    const on = x < art.width && ink[x] > 0;
+    if (on && start < 0) start = x;
+    if (!on && start >= 0) { if (x - start >= 2) centres.push((start + x - 1) / 2); start = -1; }
+  }
+  legCache.set(art, centres);
+  return centres;
+}
+
 /** Baked glyph art remains reusable, recolorable and articulatable. Original
  * reference images never enter the runtime rendering path. */
 export function authoredFrame(art: GlyphArt, options: AssetOptions, subject: 'knight' | 'horse'): AsciiCell[] {
+  const legs = subject === 'horse' ? legCentres(art) : [];
   const cells: AsciiCell[] = [];
   const walking = options.action === 'walk';
   const gait = walking ? Math.sin(options.time * 6) : 0;
@@ -22,10 +43,14 @@ export function authoredFrame(art: GlyphArt, options: AssetOptions, subject: 'kn
     let dx = 0; let dy = 0;
     if (subject === 'horse') {
       if (x < art.width * .2 && y > art.height * .4) dx = Math.sin(options.time * 3 + y * .1) * (y / art.height) * 1.3;
-      else if (walking && y > art.height * .59 && x < art.width * .85) {
-        const leg = Math.floor(x / art.width * 5);
-        dx = Math.sin(options.time * 6 + leg * Math.PI * .8) * 12 * (y / art.height - .59);
-        dy = Math.max(0, -Math.sin(options.time * 6 + leg * Math.PI * .8)) * 3 * (y / art.height - .59);
+      else if (walking && y > art.height * .59 && legs.length) {
+        // Nearest real leg owns this column; diagonal pairs move together (walk/trot gait).
+        let leg = 0; let best = Infinity;
+        for (let k = 0; k < legs.length; k++) { const d = Math.abs(x - legs[k]); if (d < best) { best = d; leg = k; } }
+        const phase = options.time * 6 + (leg % 2 ? Math.PI : 0) + (leg >= legs.length / 2 ? Math.PI / 2 : 0);
+        const depth = y / art.height - .59;
+        dx = Math.sin(phase) * 12 * depth;
+        dy = -Math.max(0, Math.sin(phase + Math.PI / 2)) * 5 * depth; // lift the hoof on the forward swing
       }
     } else {
       // Cape is rooted at the shoulder; cloth motion increases toward its hem.

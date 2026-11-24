@@ -12,6 +12,7 @@ import { AsciiPass } from './render/asciiPass.ts';
 import { AsciiSceneRenderer } from './render/asciiScene.ts';
 import { TestScene } from './game/testScene.ts';
 import { DebugOverlay } from './ui/debugOverlay.ts';
+import { startRiverScene } from './riverScene.ts';
 
 function bootstrap(): void {
   const canvas = document.getElementById('ascii-canvas') as HTMLCanvasElement;
@@ -218,4 +219,7 @@ function bootstrap(): void {
   loop.start();
 }
 
-window.addEventListener('DOMContentLoaded', bootstrap);
+window.addEventListener('DOMContentLoaded', () => {
+  if (new URLSearchParams(window.location.search).get('mode') === 'game') bootstrap();
+  else startRiverScene();
+});

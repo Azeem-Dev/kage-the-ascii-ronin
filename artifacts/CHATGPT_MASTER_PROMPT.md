@@ -1,103 +1,89 @@
-# MASTER PROMPT — "KAGE: The ASCII Ronin" (2D ASCII Samurai Action Game)
+# MASTER PROMPT - KAGE: The ASCII Open World
 
-## ROLE
-You are a senior game engineer and technical artist. Build a complete, polished, browser-based 2D action game whose entire visual output is rendered as colored ASCII glyphs. Work in phases, verify each phase in the browser (take screenshots), and do not move to the next phase until the acceptance criteria pass.
+## OBJECTIVE AND CURRENT PRIORITY
+Build a browser-based open-world ASCII action game, starting with detailed reusable visual assets demonstrated together in a full-screen playable game view. Show progress in the running scene so the user can give feedback in conversation. Do not build approval buttons, review forms or an asset-workshop dashboard.
+
+Read `memory/active-task.md` and `artifacts/DEEPSEEK_HANDOFF.md` before changing code. Inspect the existing implementation before replacing anything. Preserve user edits. Do not assume an implemented candidate is visually approved.
+
+## REFERENCE MATERIAL
+All ten videos in `motivation/` are visual references, not implementation instructions. Their underlying rendering techniques are unknown.
+- `i0asis.mp4`: large creature silhouettes, boss combat, terrain, lighting and effects.
+- `snapgram.io_wng8vz6wi6a5.mp4`: tall architecture, stairs, rooftop traversal and visual depth.
+- `snapgram.io_DfAg2Othm3G.mp4`: detailed characters, horse, grass and animated hair.
+- `snapgram.io_dsjylai6ml3t.mp4`: flowing water, foam, banks and reflections/highlights.
+- `snapgram.io_16u8lb6kj1o9.mp4`: monochrome world and local illumination masks.
+- `snapgram.io_2zuaptu2d87t.mp4`: layered architectural study and snowfall.
+- `snapgram.io_3czvsvhu3yic.mp4`: animated forms, flowing tentacles and color variation.
+- `snapgram.io_bs9g7k2yhz70.mp4`: strong silhouettes, restrained palette and atmospheric composition.
+- `snapgram.io_2wlfwmjgrxwm.mp4` and `snapgram.io_w29xqu2rt6ps.mp4`: fine glyph density, shaded forms and character-art presentation.
+Aim for detailed, recognizable, shaded objects made of fine glyphs, with stable textures and purposeful animation. Translate the style into feudal Japan: a ronin, mountain pines, bamboo, villages, shrines and waterways. References do not require multiplayer, MMO networking or copying their UI.
 
 ## HARD CONSTRAINTS
-- NO 3D. No Three.js, no WebGL, no Babylon, no raymarching, no 3D models. Only HTML5 Canvas 2D.
-- Stack: Vite + TypeScript (strict). No game engine. Zero runtime dependencies except optional Howler.js for audio (or plain WebAudio).
-- Everything visible on screen in gameplay is drawn as monospace characters on a grid. No raw sprites/pixels reach the final screen (UI menus may use ASCII box-drawing too).
-- Target 60 FPS on a mid-range laptop at 1920×1080. Fixed-timestep game loop (60 Hz update, interpolated render).
-- Clean architecture: /src/engine (loop, input, ecs-lite, camera, audio), /src/render (scene buffer, ascii pass, lighting, particles), /src/game (player, enemies, combat, levels, ai), /src/ui, /src/data (levels as JSON/TS).
+- Vite + strict TypeScript; HTML5 Canvas 2D. No WebGL, Three.js, 3D models or game engine.
+- Gameplay art consists of colored monospace glyphs. HTML controls are allowed in the development workshop.
+- No new runtime dependencies without a concrete need. Keep asset generation independent of browser APIs.
+- Target 60 FPS at 1920x1080 for the eventual representative world scene. Measure actual browser/hardware/grid settings; never infer performance from a successful build.
+- One asset contract and renderer shared by asset definitions and the playable world. Do not author a second independent copy of each asset inside a scene renderer.
+- Build iteratively. Run relevant checks and capture browser screenshots. User feedback in conversation is separate from automated technical validation. Do not implement approval workflows in the app.
 
-## VISUAL REFERENCE AND TARGET
-- Reference: [Instagram reel — playable high ground](https://www.instagram.com/reel/Dfk50iWBdPZ/). Supplied video: `snapgram.io_wng8vz6wi6a5.mp4` (about 32 seconds). The local download is not a bundled project asset.
-- Observed reference features: dense, tiny colored glyphs forming a tall ruined tower; visible top surfaces, vertical walls, stairs and rooftop characters; muted grey stone and green vegetation against very dark surroundings; small bright combat effects.
-- Match the architectural volume, fine character texture, readable silhouettes and elevated oblique composition. Adapt these qualities to feudal Japan and Kage's existing combat design. The reference does not add an MMORPG or multiplayer requirement.
-- The video's underlying rendering technology is unknown. Our implementation remains Canvas 2D with simulated height and depth.
-- Phase 1 visual benchmark: a raised Japanese gatehouse on a tall stone foundation, visible stairs and an upper landing, layered roofs, irregular foliage, one lantern and one clearly readable ronin silhouette. Show both top and side faces. A flat village scene is insufficient to validate the target.
+## REUSABLE ASSET ARCHITECTURE
+An asset definition has a stable ID, version, category, local cell bounds, ground/contact anchor, variants and a frame generator. Generator inputs include time, deterministic seed, variant, direction and action. Output cells specify local x/y, one glyph and a color. Missing cells are transparent.
 
-## THE CORE TECHNIQUE (most important — get this right first)
-Two-stage rendering pipeline:
+Support two forms through this common contract:
+1. Authored frames/layers for characters, equipment, buildings and distinctive props.
+2. Deterministic procedural generators for vegetation, ground cover, water, weather and flexible details.
 
-1. **Scene Buffer (hidden, low-res):** An offscreen canvas at the character-grid resolution × small factor (start with 2×). Draw the world with layered 2D polygons, gradients and procedural material detail. Use a consistent elevated 3/4 oblique projection showing top and side faces. Represent ground position and height separately; project height into a vertical screen offset. Draw foundations, walls, stairs, landings, roofs, foliage and actors in an explicit occlusion order. Ground y-sorting alone is insufficient for tall structures and actors on upper surfaces. Keep surface ownership/elevation available for depth decisions — still pure 2D.
+World placement is an instance containing an asset ID, position, elevation, seed, variant and animation state. Keep collision footprints and gameplay behavior separate from visual cell data. Never bake camera coordinates or scene placement into reusable definitions. Missing symbols, invalid bounds and malformed palettes should fail visibly during development.
 
-2. **ASCII Pass (visible):** For each grid cell, sample the buffer region → compute average color + luminance + edge direction (Sobel on luminance).
-   - Luminance → density ramp: ` .,:;-=+*cxoO#%@` (configurable).
-   - Strong edges override with directional glyphs: `| / — \` so roof lines, fences and walls read crisply.
-   - Material override channel: draw a second hidden "material/ID buffer" where each material has a code (grass, wood, stone, water, blood, fire, cloth, foliage). Materials can force their own glyph sets: grass `"'`,.`, foliage `&%*`, water `~≈`, rain `|/`, blood `▓▒░ *`, fire `^*'`, wood planks `=≡`, roof tiles `/\^`.
-   - Fine glyph density is essential: at 1920×1080, start High near 320×180 cells and tune for legibility and measured performance; this is a starting point, not a proven optimum. Preserve glyph aspect ratio through font selection and cell sizing. Lower presets may reduce detail but must preserve silhouettes and depth.
-   - Use stable, seeded material variation anchored to world surfaces: irregular stone courses, cracks, moss clusters, timber grain and layered leaves. Avoid uniform repeating glyph tiles and frame-random texture shimmer. Reserve continuous glyph changes for intentional animation.
-   - Glyph color = sampled color with restrained brightness/saturation adjustment. Use near-black blue/green backgrounds and subtle cell tint. Preserve deep shadows; avoid a uniform bright CRT wash. Distinguish lit top faces from darker side faces and contact shadows before sampling.
-   - Performance: pre-render all glyphs × a quantized palette (e.g. 64 colors) into a glyph atlas canvas once; blit with drawImage. Never call fillText per cell per frame.
-   - Debug keys: F1 = toggle raw scene buffer view, F2 = material buffer view, F3 = FPS/cell stats, F4 = cycle glyph ramps.
+Cache rasterized glyphs and reuse them when composing frames. The scene renderer caches glyph pixels and composites one CPU framebuffer for upload. Transparent cells are omitted; later instances overwrite earlier cells in depth order. Do not silently fall back to spaces. Match font metrics and cell aspect ratio; avoid stretching the final canvas to arbitrary viewport proportions. Keep world scale consistent across assets and display densities.
 
-## ART DIRECTION
-- Composition: architecture must read as a solid volume even at thumbnail size. Use tall foundations, overlapping roof tiers, stairs, recesses and foliage silhouettes. Keep surrounding terrain subdued so the raised structure and actors dominate.
-- Texture: fine grey stone glyphs with broken, irregular edges and clustered moss; darker vertical faces; sparse highlights along rooflines, stair edges and exposed corners. Use material-specific character variation without turning every surface into equal-density noise.
-- Mood: feudal Japan at night, moonlit, rain and mist. Mostly desaturated blue/grey/green glyphs; warm amber light from paper lanterns and shoji windows; red reserved ONLY for blood, torii gates and danger.
-- 2D lighting: a light map (radial gradients from lanterns, torches, moon direction) multiplied into the scene buffer before the ASCII pass, so glyphs near light become denser and warmer. Flickering lanterns.
-- Atmosphere layers: subtle drifting fog (scrolling noise), rain (falling `|` and `/` glyphs, splash `.` `°` on impact), falling sakura petals `✿ ·` in some levels, fireflies. Keep weather behind the visual hierarchy: it must not obscure architecture, stairs, characters or attack telegraphs.
-- Characters stay readable at small size: strong silhouettes, the player has a distinct color accent (e.g. white headband/katana glint).
+Directly authored/generated glyphs are the primary asset path. The old scene-buffer/Sobel/material conversion modules remain legacy experiments; they are optional future tools for specific needs, not a mandatory parallel render pass. Do not spend each normal game frame rendering the hidden legacy scene.
 
-## GAMEPLAY
-Genre: tight, deliberate samurai action (think Sekiro/Ghost of Tsushima combat ideas in a 2D top-down form). Few enemies, every fight matters.
+Use stable seeded texture anchored to assets/world surfaces. Separate static detail from animated layers. Avoid random flicker, identical filled ellipses for every tree, and one uniform character across large surfaces. Lighting should eventually affect glyph color/density coherently while preserving silhouettes.
 
-**Player — the ronin "Kage":**
-- WASD / left stick move, Shift dash (i-frames, stamina cost).
-- J / X: light slash (3-hit combo). K / Y: heavy slash.
-- L / RB: parry/deflect — tight window (~150 ms) = perfect deflect, builds enemy "posture" damage.
-- Hold I / LT then release: Iaijutsu quick-draw — a charged single strike that kills instantly when the enemy's posture is broken.
-- Health, Stamina, and a Posture bar for enemies (break posture → finisher).
-- Hit-stop (2–4 frames), screen shake, slash arcs drawn as glyph trails `─═━`, sparks `*+'` on deflect, blood glyph splatter that stays on the ground for the level.
+## PRESENTATION AND FEEDBACK
+- Open `/` for the full-screen playable river demonstration. The old scene remains at `?mode=game` for comparison.
+- Show the assets as part of the environment, as in the reference videos. No dashboard, cards, approve/reject buttons, review storage or review export.
+- Controls: WASD/arrows move, Shift runs, mouse wheel zooms, V switches robe variant, P pauses animation/movement, R resets position/zoom, click/tap walks toward a point.
+- Screenshot the actual game scene for discussion. The user gives feedback in conversation, and the developer refines the asset definitions.
+- Make the running scene visually substantial: shaded character form, layered clothing, hair motion, dense coherent grass, dark cut banks, water highlights/wakes, depth-sorted rocks and trees.
+- Keep this a reusable asset foundation: character, pine, rock and landscape definitions are independent modules. Scene instances set position, scale, seed and variant.
 
-**Enemies (data-driven, finite-state-machine AI):**
-1. Ashigaru spearman — slow, long poke, easy to read.
-2. Ronin swordsman — mirrors the player: feints, deflects, punishes spam.
-3. Archer — keeps distance, telegraphed with a glyph aim line.
-4. Kitsune spirit (yokai) — teleports in fog, swaps glyphs to make it hard to see.
-5. Boss: Oni of the Burnt Shrine — big multi-phase fight, fire glyphs, area attacks with clear telegraphs (flashing red cells before impact).
-All attacks have a visible wind-up (enemy glyphs brighten / a `!` appears above the head).
+## BUILD PHASES
+### Phase 1 - Reusable ASCII assets in a playable scene (CURRENT)
+Build the shared asset contract, deterministic procedural/shape authoring and cached glyph renderer. Demonstrate a shaded ronin, mountain pines, stones, dense animated grass and a flowing river together in a full-screen walkable scene. Add robe variants, hair/cloth motion, actor movement, zoom, pause and wakes while wading. Keep generators reusable outside this scene.
+Acceptance: assets render without runtime errors; seeds repeat exactly; variants differ; applicable animations change over time; generated cells stay in bounds; character silhouette/feet remain readable; camera movement preserves world-anchored texture; depth sorting allows walking behind props; river movement creates wakes; desktop/mobile controls work. Run `npm test`, `npm run build`, and browser movement/pause/zoom checks; save game screenshots. Report actual performance and visual limitations. User feedback happens in conversation, not through app UI. Do not claim reference-level quality from tests alone.
 
-**Stealth (light):** Crouch in tall grass `"` to hide, assassinate unaware enemies from behind.
+### Phase 2 - Approved reusable asset library
+Refine Phase 1 candidates against the reference videos and user feedback. Add authored character animation clips (idle, multi-frame walk and facing directions), layered equipment/cloth, several tree silhouettes, grass/flower variants, rocks, soil/path patches, bamboo and a lantern. Add building modules: foundation, wall, roof, stair, fence and torii. Expand the catalog incrementally and show new candidates directly in the running scene. Do not add review import/export or approval controls.
+Acceptance: the user has reviewed the starter assets in conversation; each has a stable anchor, documented scale and version; animation contact points remain stable; silhouettes work at gameplay size; no unknown glyphs or scene-specific placement in asset definitions. Validate layering and transparent cutouts.
 
-**Levels (3 for v1):**
-1. Rain-soaked village at night (tutorial, lanterns, houses with glowing windows).
-2. Bamboo forest in fog (stealth focus, kitsune).
-3. Burnt mountain shrine (torii gates, boss).
-Tile/level data in TypeScript/JSON so new levels are easy to add. Simple scrolling camera with smooth follow and slight look-ahead.
-Include walkable raised landings and stairs in the village. Model elevation, surface connections and collision explicitly so actors can climb stairs and stand on upper surfaces without walking through walls or attacking across disconnected heights. This traversal begins in Phase 2; Phase 1 only demonstrates the visual depth with a static actor.
+### Phase 3 - World composition and map data
+Create a small composition sandbox using the approved catalog. Store asset instances and terrain data separately from rendering. Add a shared camera/projection, placement selection, save/load map JSON, consistent scale, collision footprints and depth-aware occlusion. Include a raised gatehouse with stone foundations, stairs, foliage and one ronin as an architectural benchmark.
+Acceptance: the same definitions can be instantiated in different maps; multiple instances share definitions while keeping independent seeds/state; save/load preserves placement; actors can move behind/in front of props; elevation and stairs align with visible surfaces. Test data round trips and collision boundaries. Do not use unrelated hardcoded coordinate copies for drawing and traversal.
 
-**Story hook (minimal):** A masterless ronin hunts the oni that burned his clan's shrine. Short ASCII-text dialogue boxes, typewriter effect, no cutscenes.
+### Phase 4 - Open-world exploration foundation
+Expand the sandbox into connected village, bamboo forest and mountain shrine regions. Add chunked world data, load/unload around the camera, stable coordinates/seeds across chunk boundaries, smooth camera follow and player movement, elevation-aware collision/traversal, interactions and persistent world changes. Add restrained rain, fog, lantern light and water animation through reusable systems.
+Acceptance: cross chunk boundaries without seams, regenerated texture or lost state; returning to an area restores changes; offscreen work is culled; memory does not grow without bound; movement and occlusion remain coherent around stairs/buildings. Profile a representative populated region against the frame budget.
 
-## UI (all ASCII)
-- Title screen: big ASCII-art "KAGE" logo built from the same pipeline (render text into the buffer, ASCII-ize it), rain in the background, "Press Enter".
-- HUD: health/stamina as glyph bars `[████░░░░]`, small and in the corner. Enemy posture bar above the enemy.
-- Pause menu, death screen ("死" kanji rendered big in glyphs), level-complete screen.
-- Settings: glyph ramp choice, grid density (Low/Med/High cell count), screen shake on/off, volume.
+### Phase 5 - Combat, inhabitants and progression
+Implement stamina, dash with invulnerability frames, light combo, heavy slash, a tight parry window and charged iaijutsu. Use reusable character animation/effect definitions for slash trails, sparks, blood, hit-stop and screen shake. Add data-driven spearman, swordsman, archer and kitsune behavior, readable telegraphs, enemy posture, stealth and a multi-phase Oni boss. Add NPC interaction, short dialogue, basic quests and persistent progression across connected regions.
+Acceptance: test combat timings, damage/posture, stamina and death/recovery; prevent attacks across disconnected elevations; telegraphs stay legible in dense scenery; state survives region changes; confirm feel in the browser. Keep the focus on a playable single-player open world.
 
-## AUDIO
-WebAudio: rain loop, wind, katana unsheathe/clash/slice, footsteps on wood vs grass, a low taiko drum during combat that fades out after. Use placeholder synthesized sounds if no assets; structure the code so real files can be swapped in.
+### Phase 6 - Presentation, polish and release validation
+Add title/pause/death/settings screens, glyph HUD, synthesized or replaceable audio, gamepad support and settings persistence. Tune font metrics, material shading, local lighting, weather, accessibility and performance. Profile generation, culling, glyph caching and upload costs before optimizing. Add detail/density settings without changing physical proportions.
+Acceptance: build outputs a static deployable `dist`; verify a full exploration/combat/save/reload flow; measure sustained FPS at the actual target settings; report remaining limitations and reference mismatches. Show game screenshots and summarize the latest user feedback. Do not deploy externally without authorization.
 
-## BUILD PHASES (verify each in the browser with screenshots before continuing)
-**Phase 1 — ASCII renderer and architectural depth:** Vite+TS setup, scene/material buffers, ASCII pass with glyph atlas, and the static raised gatehouse benchmark defined above. Include a ronin silhouette for scale, stone stairs, foliage and restrained lantern lighting. Debug toggles F1–F4.
-✅ Accept: fine individual glyphs are visible at native resolution; gatehouse, stone foundation, stairs, upper landing and ronin remain recognizable at thumbnail size; top and side faces read distinctly; overlaps show convincing height; roof/stair edges use directional glyphs without flattening material texture. Capture native-resolution ASCII and raw-buffer screenshots from the same composition. Measure sustained performance at High density at 1920×1080 against the 60 FPS target and report actual grid size, browser and hardware; do not claim the target passed without measurement.
+## CODE ORGANIZATION AND HANDOFF
+- `src/assets/`: reusable contracts, authored definitions and procedural generators.
+- `src/render/assetRenderer.ts`: shared cell-to-canvas renderer.
+- `src/riverScene.ts` and `src/riverScene.css`: full-screen playable asset demonstration.
+- `src/assets/landscape.ts`: continuous world-anchored meadow and river sampling.
+- `src/engine/`: loop, input, camera, audio and later streaming infrastructure.
+- `src/game/` and later `src/data/`: gameplay, world instances and region data.
+- `tests/`: deterministic generator checks and playable-scene browser checks.
+- `artifacts/preview/`: current game screenshots; `artifacts/DEEPSEEK_HANDOFF.md`: continuation details.
 
-**Phase 2 — World, elevation & atmosphere:** tilemap with surface heights and stair connections, depth-aware drawing order, camera, light map with flicker, rain, fog, petals.
-✅ Accept: move a readable placeholder actor from village ground up the stairs to the gatehouse landing and back; walls block movement; upper/lower actors occlude correctly; camera motion preserves stable material texture; lighting and weather maintain the dark reference mood without masking silhouettes or traversal routes.
+Strict TypeScript, no `any`. Keep shared engine settings in configuration, asset-specific palettes/geometry with their definitions, and gameplay tunables in data. Preserve existing work; migrate legacy code only as replacements are verified. Keep both master prompt files identical, maintain active-task/checkpoint notes, and distinguish tests passed, visual checks performed, user feedback and remaining work.
 
-**Phase 3 — Player & combat core:** movement, dash, combo, parry, iaijutsu, stamina, hit-stop, shake, blood decals. A training dummy.
-✅ Accept: combat feels responsive; parry window works; effects read clearly in glyphs.
-
-**Phase 4 — Enemies & AI:** all 4 enemy types, telegraphs, posture system, stealth assassinations.
-
-**Phase 5 — Levels, boss, UI, audio:** 3 levels, Oni boss, all menus, dialogue, sound.
-
-**Phase 6 — Polish & performance:** profile and optimize (dirty-cell updates, typed arrays for buffers), gamepad support, settings persistence in localStorage, `npm run build` produces a static deployable /dist.
-
-## CODE QUALITY RULES
-- Strict TypeScript, no `any`. Small focused modules. All tunables (speeds, windows, damage, colors, ramps) in a single `config.ts`.
-- Comment the ASCII pipeline thoroughly; it's the heart of the project.
-- After every phase: summarize what was built, list known issues, and show a screenshot.
-
-Start with Phase 1 only. Produce the implementation plan first.
+Continue Phase 1 from the existing implementation. Show the user the running scene and gather feedback before expanding to Phase 2. Do not recreate the removed workshop/approval UI. Do not restart scaffolding or treat later phases as already authorized for immediate implementation.

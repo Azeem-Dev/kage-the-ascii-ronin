@@ -7,7 +7,7 @@
 
 import { CONFIG } from '../config.ts';
 import { GlyphAtlas, quantizeRGB } from './glyphAtlas.ts';
-import { WORLD, projectBase, sampleSurface, depthOf, WorldPoint } from '../game/world.ts';
+import { WORLD, projectBase, WorldPoint } from '../game/world.ts';
 
 export interface AsciiActorView {
   x: number;

@@ -23,8 +23,13 @@ export class TerrainLayer {
   private grassIds = new Uint32Array(0);
   private grassTip = new Uint8Array(0);
   private lighter = new Map<string, string>();
+  /** Ids of empty ground (spaces), where a grass tip may grow. */
+  private blankIds = new Set<number>();
 
   constructor(private renderer: AssetRenderer) {}
+
+  /** The unanimated ground of the last get() (no water glints or grass sway). Must never change with time. */
+  get stable(): Uint32Array { return this.base; }
 
   private ensureGrass(capacity: number): void {
     if (this.grassX.length >= capacity) return;
@@ -97,6 +102,7 @@ export class TerrainLayer {
         const cell = landscapeCell(wx, wy, 0, 17);
         if (!cell) return;
         this.base[index] = this.renderer.glyph(cell.glyph, cell.color);
+        if (cell.glyph === ' ') this.blankIds.add(this.base[index]);
         // Grass, wheat and undergrowth stems become swaying strands.
         if ((cell.glyph === '|' || cell.glyph === '/' || cell.glyph === '\\' || cell.glyph === '!') && this.grassCount < this.grassX.length) {
           const r = this.grassCount++; const o = r * 6; const tip = this.tipColor(cell.color);
@@ -140,7 +146,7 @@ export class TerrainLayer {
         if (this.grassTip[r] && sy > 0) {
           // The tip sits above the stem and shifts with the lean, only into empty ground.
           const j = i - o.cols + (k === 2 ? 1 : k === 0 ? -1 : 0);
-          if (j >= 0 && sx + (k - 1) >= 0 && sx + (k - 1) < o.cols && this.renderer.isBlank(this.base[j])) this.animated[j] = this.grassIds[r * 6 + 3 + k];
+          if (j >= 0 && sx + (k - 1) >= 0 && sx + (k - 1) < o.cols && (this.base[j] === 0 || this.blankIds.has(this.base[j]))) this.animated[j] = this.grassIds[r * 6 + 3 + k];
         }
       }
     }

@@ -71,9 +71,13 @@ assert.equal(cache.get(definition, { ...options, time: 5 }, .2), compiled);
 assert.equal(generated, 1, 'Static trees regenerate on animation ticks');
 const { TerrainLayer } = await import(load(path.join(root, 'src/render/terrainLayer.ts')));
 const terrain = new TerrainLayer(fakeRenderer);
-const ground = terrain.get(0, 0, 12, 12, 4, 0).slice();
-assert.deepEqual(terrain.get(0, 0, 12, 12, 4, 5), ground, 'Ground texture changes with time');
-const shifted = terrain.get(4, 0, 12, 12, 4, 5);
+// The ground itself must never change with time; only grass sway and water glints animate on top.
+terrain.get(0, 0, 12, 12, 4, 0);
+const ground = terrain.stable.slice();
+terrain.get(0, 0, 12, 12, 4, 5);
+assert.deepEqual(terrain.stable, ground, 'Ground texture changes with time');
+terrain.get(4, 0, 12, 12, 4, 5);
+const shifted = terrain.stable;
 for (let y = 0; y < 12; y++) for (let x = 0; x < 11; x++) assert.equal(shifted[y * 12 + x], ground[y * 12 + x + 1], 'Coarse camera movement resamples ground texture');
 const { moveBody } = await import(load(path.join(root, 'src/engine/physics.ts')));
 const body = { x: 0, y: 0, vx: 0, vy: 0 };

@@ -77,14 +77,15 @@ export class GpuPresenter {
               if (l > 1.5 && l < 3.5) { base = float(k); break; }
             }
             if (base > 0.) {
-              float wobble = sin(cell.y * .9 + time * 2.6) * .7 + sin(cell.y * .31 - time * 1.4 + cell.x * .05) * .6;
+              // Slow, gentle ripple: rows shift by at most one cell, so the reflection stays a calm image.
+              float wobble = sin(cell.y * .35 + time * 1.1) * .62;
               vec2 src = vec2(cell.x + floor(wobble + .5), cell.y - 2. * base + 1.);
               float l = layerAt(src);
               if (src.y >= 0. && l > 1.5 && l < 3.5) {
                 vec2 stc = (src + .5) / grid;
                 vec4 sf = texture2D(tFg, stc); vec4 sb = texture2D(tBg, stc);
                 float sm = glyphMask(sf, sb, vec2(local.x, 1. - local.y));   // upside down
-                float fade = clamp(1. - base / 34., .25, 1.) * (.82 + .18 * sin(time * 3. + cell.y * 1.7));
+                float fade = clamp(1. - base / 34., .25, 1.) * (.93 + .07 * sin(time * 1.3 + cell.y * .4));
                 vec3 tint = vec3(.62, .74, .92);
                 srgb = mix(srgb, mix(sb.rgb * .55, sf.rgb * tint * .95, sm) * fade + srgb * (1. - fade) * .35, .9);
                 srgb.g += debugWater * .5;

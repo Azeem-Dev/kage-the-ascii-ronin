@@ -396,6 +396,8 @@ export class AssetRenderer {
   /** Packed per-cell colours from the last shade: fg = mask<<15 | rgb555, bg = rgb555. */
   get foreground(): Uint32Array { return this.fg; }
   get background(): Uint16Array { return this.bg; }
+  /** True if the id draws no glyph (empty or a space). */
+  isBlank(id: number): boolean { return !id || !this.definitions[id] || this.definitions[id].mask === 0; }
   /** Glyph characters by mask index (index 0 is blank). */
   get glyphList(): readonly string[] { return this.glyphChars; }
 

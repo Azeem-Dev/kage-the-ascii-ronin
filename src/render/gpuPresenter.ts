@@ -24,6 +24,8 @@ export class GpuPresenter {
   private material: THREE.ShaderMaterial;
   private fgTexture: THREE.DataTexture | null = null;
   private bgTexture: THREE.DataTexture | null = null;
+  private infoTexture: THREE.DataTexture | null = null;
+  private infoData = new Uint8Array(new ArrayBuffer(0));
   private fgData = new Uint8Array(new ArrayBuffer(0));
   private bgData = new Uint8Array(new ArrayBuffer(0));
   private atlas: THREE.CanvasTexture | null = null;
@@ -36,25 +38,63 @@ export class GpuPresenter {
     this.renderer.setPixelRatio(1); // the canvas is already sized in device pixels
     this.material = new THREE.ShaderMaterial({
       uniforms: {
-        tFg: { value: null }, tBg: { value: null }, tAtlas: { value: null },
+        tFg: { value: null }, tBg: { value: null }, tAtlas: { value: null }, tInfo: { value: null },
+        time: { value: 0 }, night: { value: 0 }, moonX: { value: .68 },
+        debugWater: { value: new URLSearchParams(location.search).get('debug') === 'water' ? 1 : 0 },
         grid: { value: new THREE.Vector2(1, 1) }, atlasGrid: { value: new THREE.Vector2(ATLAS_COLUMNS, 1) },
       },
       vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0., 1.); }',
       fragmentShader: `
-        uniform sampler2D tFg; uniform sampler2D tBg; uniform sampler2D tAtlas; uniform vec2 grid; uniform vec2 atlasGrid;
+        uniform sampler2D tFg; uniform sampler2D tBg; uniform sampler2D tAtlas; uniform sampler2D tInfo; uniform vec2 grid; uniform vec2 atlasGrid;
+        uniform float time; uniform float night; uniform float moonX; uniform float debugWater;
         varying vec2 vUv;
+        float glyphMask(vec4 f, vec4 b, vec2 local){
+          float index = floor(f.a * 255. + .5) + floor(b.a * 255. + .5) * 256.;
+          if (index < .5) return 0.;
+          vec2 a = vec2(mod(index, atlasGrid.x), floor(index / atlasGrid.x));
+          return texture2D(tAtlas, vec2((a.x + local.x) / atlasGrid.x, 1. - (a.y + local.y) / atlasGrid.y)).r;
+        }
+        float layerAt(vec2 cell){ return floor(texture2D(tInfo, (cell + .5) / grid).r * 255. / 50. + .5); }
+        float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
         void main(){
           vec2 p = vec2(vUv.x, 1. - vUv.y) * grid;           // row 0 at the top, like the CPU grid
           vec2 cell = floor(p); vec2 local = fract(p);
           vec2 tc = (cell + .5) / grid;
           vec4 f = texture2D(tFg, tc); vec4 b = texture2D(tBg, tc);
-          float index = floor(f.a * 255. + .5) + floor(b.a * 255. + .5) * 256.;
-          float mask = 0.;
-          if (index > .5) {
-            vec2 a = vec2(mod(index, atlasGrid.x), floor(index / atlasGrid.x));
-            mask = texture2D(tAtlas, vec2((a.x + local.x) / atlasGrid.x, 1. - (a.y + local.y) / atlasGrid.y)).r;
-          }
+          vec4 info = texture2D(tInfo, tc);
+          float mask = glyphMask(f, b, local);
           vec3 srgb = mix(b.rgb, f.rgb, mask);
+          float layer = floor(info.r * 255. / 50. + .5);
+          // Water: mirrored, rippling reflections of whatever stands above, plus a moon path.
+          if (info.g > .5 && (layer < .5 || layer > 3.5)) {
+            float base = 0.;
+            for (int k = 1; k <= 30; k++) {
+              vec2 q = cell - vec2(0., float(k));
+              if (q.y < 0.) break;
+              float l = layerAt(q);
+              if (l > 1.5 && l < 3.5) { base = float(k); break; }
+            }
+            if (base > 0.) {
+              float wobble = sin(cell.y * .9 + time * 2.6) * .7 + sin(cell.y * .31 - time * 1.4 + cell.x * .05) * .6;
+              vec2 src = vec2(cell.x + floor(wobble + .5), cell.y - 2. * base + 1.);
+              float l = layerAt(src);
+              if (src.y >= 0. && l > 1.5 && l < 3.5) {
+                vec2 stc = (src + .5) / grid;
+                vec4 sf = texture2D(tFg, stc); vec4 sb = texture2D(tBg, stc);
+                float sm = glyphMask(sf, sb, vec2(local.x, 1. - local.y));   // upside down
+                float fade = clamp(1. - base / 34., .25, 1.) * (.82 + .18 * sin(time * 3. + cell.y * 1.7));
+                vec3 tint = vec3(.62, .74, .92);
+                srgb = mix(srgb, mix(sb.rgb * .55, sf.rgb * tint * .95, sm) * fade + srgb * (1. - fade) * .35, .9);
+                srgb.g += debugWater * .5;
+              }
+            }
+            srgb.r += debugWater * .25;
+            // Moon path: a shimmering band of glints across the current at night.
+            float band = exp(-pow((cell.x / grid.x - moonX) * 11., 2.));
+            float glint = step(.86, hash(vec2(cell.x, cell.y + floor(time * 5. + cell.x * .3))));
+            srgb += vec3(.62, .68, .8) * glint * band * night * .9;
+            srgb += vec3(.05, .07, .11) * band * night;
+          }
           gl_FragColor = vec4(pow(srgb, vec3(2.2)), 1.);   // linear for bloom; OutputPass re-encodes
         }`,
       depthTest: false, depthWrite: false,
@@ -93,7 +133,11 @@ export class GpuPresenter {
     this.atlasGlyphs = glyphs.length; this.atlasCellW = cw; this.atlasCellH = ch;
   }
 
-  present(source: AssetRenderer, cols: number, rows: number): void {
+  /**
+   * @param water 1 per river cell (TerrainLayer.waterMask), same layout as the cell grid.
+   * @param night 0 = full day, 1 = full night (drives the moon path).
+   */
+  present(source: AssetRenderer, cols: number, rows: number, water: Uint8Array, time: number, night: number): void {
     const width = cols * source.cellWidth; const height = rows * source.cellHeight;
     if (!(width > 0 && height > 0)) return;
     if (width !== this.width || height !== this.height) {
@@ -103,15 +147,17 @@ export class GpuPresenter {
       this.bloom.resolution.set(width / 2, height / 2);
     }
     if (!this.fgTexture || this.fgTexture.image.width !== cols || this.fgTexture.image.height !== rows) {
-      this.fgTexture?.dispose(); this.bgTexture?.dispose();
+      this.fgTexture?.dispose(); this.bgTexture?.dispose(); this.infoTexture?.dispose();
       this.fgData = new Uint8Array(new ArrayBuffer(cols * rows * 4)); this.bgData = new Uint8Array(new ArrayBuffer(cols * rows * 4));
+      this.infoData = new Uint8Array(new ArrayBuffer(cols * rows * 4));
       const make = (data: Uint8Array<ArrayBuffer>) => {
         const t = new THREE.DataTexture(data, cols, rows, THREE.RGBAFormat, THREE.UnsignedByteType);
         t.minFilter = THREE.NearestFilter; t.magFilter = THREE.NearestFilter; t.generateMipmaps = false;
         return t;
       };
-      this.fgTexture = make(this.fgData); this.bgTexture = make(this.bgData);
+      this.fgTexture = make(this.fgData); this.bgTexture = make(this.bgData); this.infoTexture = make(this.infoData);
       this.material.uniforms.tFg.value = this.fgTexture; this.material.uniforms.tBg.value = this.bgTexture;
+      this.material.uniforms.tInfo.value = this.infoTexture;
       (this.material.uniforms.grid.value as THREE.Vector2).set(cols, rows);
     }
     this.updateAtlas(source.glyphList, source.cellWidth, source.cellHeight);
@@ -122,6 +168,11 @@ export class GpuPresenter {
       fd[o] = EXPAND[(f >> 10) & 31]; fd[o + 1] = EXPAND[(f >> 5) & 31]; fd[o + 2] = EXPAND[f & 31]; fd[o + 3] = mask & 255;
       bd[o] = EXPAND[(b >> 10) & 31]; bd[o + 1] = EXPAND[(b >> 5) & 31]; bd[o + 2] = EXPAND[b & 31]; bd[o + 3] = mask >> 8;
     }
+    // Per-cell layer and water flag for reflections.
+    const layers = source.layers; const info = this.infoData; const hasWater = water.length === fg.length;
+    for (let i = 0, o = 0; i < fg.length; i++, o += 4) { info[o] = layers[i] * 50; info[o + 1] = hasWater && water[i] ? 255 : 0; }
+    this.infoTexture!.needsUpdate = true;
+    this.material.uniforms.time.value = time; this.material.uniforms.night.value = night;
     this.fgTexture.needsUpdate = true; this.bgTexture!.needsUpdate = true;
     this.composer.render();
   }

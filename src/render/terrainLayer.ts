@@ -12,6 +12,9 @@ export class TerrainLayer {
   private tick = -1;
   private origin: { x: number; y: number; cols: number; rows: number; step: number } | null = null;
   private spare = new Uint32Array(0);
+  /** 1 where the cell is river water (same layout as the returned ids); used by the GPU water shader. */
+  waterMask = new Uint8Array(0);
+  private spareMask = new Uint8Array(0);
 
   constructor(private renderer: AssetRenderer) {}
 
@@ -26,12 +29,19 @@ export class TerrainLayer {
       this.base = this.spare.length === cols * rows ? this.spare : new Uint32Array(cols * rows);
       this.base.fill(0);
       this.spare = previous;
+      const previousMask = this.waterMask;
+      this.waterMask = this.spareMask.length === cols * rows ? this.spareMask : new Uint8Array(cols * rows);
+      this.waterMask.fill(0);
+      this.spareMask = previousMask;
       if (this.animated.length !== cols * rows) this.animated = new Uint32Array(cols * rows);
       const start = Math.max(0, -dx); const end = Math.min(cols, cols - dx);
       if (shift) {
         for (let sy = 0; sy < rows; sy++) {
           const srcY = sy + dy;
-          if (srcY >= 0 && srcY < rows) this.base.set(previous.subarray(srcY * cols + start + dx, srcY * cols + end + dx), sy * cols + start);
+          if (srcY >= 0 && srcY < rows) {
+            this.base.set(previous.subarray(srcY * cols + start + dx, srcY * cols + end + dx), sy * cols + start);
+            this.waterMask.set(previousMask.subarray(srcY * cols + start + dx, srcY * cols + end + dx), sy * cols + start);
+          }
         }
         this.water = this.water.flatMap(sample => {
           const sx = sample.index % cols - dx; const sy = Math.floor(sample.index / cols) - dy;
@@ -40,9 +50,10 @@ export class TerrainLayer {
       } else this.water = [];
       const sampleCell = (sx: number, sy: number) => {
         const wx = x + sx * step; const wy = y + sy * step;
+        const index = sy * cols + sx;
+        if (waterDepth(wx, wy) > 0) this.waterMask[index] = 1;
         const cell = landscapeCell(wx, wy, 0, 17);
         if (!cell) return;
-        const index = sy * cols + sx;
         this.base[index] = this.renderer.glyph(cell.glyph, cell.color);
         // Only sparse highlights animate. Water retains fixed brightness and
         // occupancy, so a current cannot flash an entire river band on/off.

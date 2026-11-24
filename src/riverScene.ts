@@ -361,7 +361,7 @@ export function startRiverScene(): void {
     const canScroll = lastCols === cols && lastRows === rows && lastDetailStep === detailStep && Number.isFinite(lastCameraX);
     const scrollX = canScroll ? -Math.round((cameraX - lastCameraX) / detailStep) : 0;
     const scrollY = canScroll ? -Math.round((cameraY - lastCameraY) / detailStep) : 0;
-    if (gpu) { renderer.prepare(ids, cols, rows); gpu.present(renderer, cols, rows); }
+    if (gpu) { renderer.prepare(ids, cols, rows); gpu.present(renderer, cols, rows, terrain.waterMask, time, 1 - dayFactor()); }
     else renderer.present(ctx, ids, cols, rows, scrollX, scrollY);
     lastCameraX = cameraX; lastCameraY = cameraY;
     lastCols = cols; lastRows = rows; lastDetailStep = detailStep;

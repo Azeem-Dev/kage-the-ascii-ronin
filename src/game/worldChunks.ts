@@ -1,5 +1,5 @@
 import { noise } from '../assets/types.ts';
-import { riverCenter, waterDepth } from '../assets/landscape.ts';
+import { GROUND, forestDensity, groundAt, riverCenter, roadDistance, waterDepth } from '../assets/landscape.ts';
 import { LANDMARK_PROPS, LANDMARKS } from './landmarks.ts';
 
 export interface WorldProp {
@@ -26,17 +26,33 @@ const STARTER_PROPS: readonly WorldProp[] = [
  * produce identical IDs, placement, variants and seeds, including at negatives. */
 export function generateChunk(cx: number, cy: number): WorldChunk {
   const props: WorldProp[] = [...STARTER_PROPS, ...LANDMARK_PROPS].filter(p => Math.floor(p.x / CHUNK_SIZE) === cx && Math.floor(p.y / CHUNK_SIZE) === cy);
-  for (let i = 0; i < 3; i++) {
+  for (let i = 0; i < 7; i++) {
     const seed = Math.floor(noise(cx * 7 + i, cy, 729) * 99999);
-    const y = cy * CHUNK_SIZE + 14 + noise(cx, cy * 5 + i, 331) * 67;
-    let x = cx * CHUNK_SIZE + 12 + noise(cx * 3 + i, cy, 109) * 72;
-    const assetId = i < 2 ? 'pine' : 'rock';
-    if (assetId === 'pine' && (noise(cx * 3 + i, cy, 601) < .72 || LANDMARKS.some(region => Math.hypot(x - region.x, y - region.y) < 150))) continue;
-    if (assetId === 'rock' && riverCenter(y) >= cx * CHUNK_SIZE && riverCenter(y) < (cx + 1) * CHUNK_SIZE) x = riverCenter(y) + (noise(cx, cy, 57) - .5) * 30;
+    const y = cy * CHUNK_SIZE + 10 + noise(cx, cy * 5 + i, 331) * 76;
+    let x = cx * CHUNK_SIZE + 10 + noise(cx * 3 + i, cy, 109) * 76;
+    // 0-2 trees (denser in woodland), 3 rock, 4-6 flowers.
+    const kind = i < 3 ? 'pine' : i === 3 ? 'rock' : 'flower';
+    const nearRegion = LANDMARKS.some(region => Math.hypot(x - region.x, y - region.y) < (kind === 'pine' ? 150 : 90));
+    if (kind === 'pine') {
+      const density = forestDensity(x, y);
+      if (nearRegion || noise(cx * 3 + i, cy, 601) > .35 + density * .9) continue;
+      if (roadDistance(x, y) < 14) continue;
+    }
+    if (kind === 'rock' && riverCenter(y) >= cx * CHUNK_SIZE && riverCenter(y) < (cx + 1) * CHUNK_SIZE) x = riverCenter(y) + (noise(cx, cy, 57) - .5) * 30;
+    if (kind === 'flower' && (nearRegion || noise(cx * 5 + i, cy, 417) < .45)) continue;
     // Keep the authored starting clearing intact; its surroundings are generated.
     if (x >= 145 && x <= 530 && y >= 100 && y <= 400) continue;
-    if (assetId === 'pine' && waterDepth(x, y) > -12) continue;
-    props.push({ id: `${cx}:${cy}:${i}`, assetId, x, y, seed, scale: assetId === 'pine' ? .55 + noise(cx + i, cy, 81) * .3 : .6 + noise(cx, cy + i, 24) * .3, variant: seed % 2 });
+    if (waterDepth(x, y) > -9 || roadDistance(x, y) < 7) continue;
+    const ground = groundAt(x, y);
+    if (ground !== GROUND.LUSH && ground !== GROUND.FOREST && ground !== GROUND.FLOWER && !(kind === 'rock' && ground === GROUND.SAND)) continue;
+    if (kind === 'pine' && ground === GROUND.FLOWER) continue;
+    const assetId = kind === 'pine' ? 'pine' : kind === 'rock' ? 'rock' : ['flowers-blue', 'flowers-pink', 'flowers-purple', 'flowers-gold'][seed % 4];
+    props.push({ id: `${cx}:${cy}:${i}`, assetId, x, y, seed, scale: kind === 'pine' ? .55 + noise(cx + i, cy, 81) * .3 : kind === 'rock' ? .6 + noise(cx, cy + i, 24) * .3 : .3 + noise(cx + i, cy, 81) * .15, variant: seed % 2 });
+    // Trees come in small groves.
+    if (kind === 'pine' && seed % 3 === 0) {
+      const gx = x + 9 + (seed % 7), gy = y + 4 + (seed % 5);
+      if (waterDepth(gx, gy) < -9 && roadDistance(gx, gy) > 10 && groundAt(gx, gy) <= GROUND.FOREST) props.push({ id: `${cx}:${cy}:${i}g`, assetId: 'pine', x: gx, y: gy, seed: seed + 5, scale: .5 + noise(cx + i, cy, 83) * .3, variant: (seed + 1) % 2 });
+    }
   }
   return { x: cx, y: cy, props };
 }

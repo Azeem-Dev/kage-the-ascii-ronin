@@ -67,6 +67,17 @@ For each finished stream:
 - People are currently static placements; NPC behaviour/AI is not started.
 - Add any new test files to the `npm test` script in `package.json`.
 
+## Direction change (2026-11-24): Three.js + Capacitor
+
+The owner chose to move from the Canvas 2D glyph renderer to **Three.js** (3D scene
+rendered through a GPU ASCII shader), shipped to web via Vite and to iOS/Android via
+**Capacitor**. This replaces the "No WebGL" rule below. Keep: terrain sampling, world
+chunks/regions, colliders and `src/engine/` physics (already x/y/z). Replace: the
+renderer and 2D glyph sprites (characters become low-poly models or billboards).
+Build it first as a prototype behind `?mode=3d`; the 2D game stays until the owner switches.
+Mobile: touch controls (joystick / tap-to-move), quality levels, 30–60 FPS on mid phones.
+Story and hero (a samurai): `docs/STORY.md`.
+
 ## Rules the owner has set
 
 - Show results in the running game; no approval dashboards or per-asset review UIs.

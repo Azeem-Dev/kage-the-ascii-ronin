@@ -20,6 +20,20 @@ export enum Material {
   TORII = 13,
 }
 
+/**
+ * Surface orientation stored in the material buffer's green channel.
+ * The ASCII pass uses this to keep wood grain, stone courses and roof tiles
+ * aligned with the projected face instead of the screen grid.
+ */
+export enum Surface {
+  FLAT = 0,
+  VERTICAL = 1,
+  HORIZONTAL = 2,
+  SLOPE_LEFT = 3,
+  SLOPE_RIGHT = 4,
+  CYLINDER = 5,
+}
+
 export interface MaterialDef {
   name: string;
   glyphs: string[];
@@ -42,13 +56,13 @@ export const MATERIAL_DEFS: Record<Material, MaterialDef> = {
   },
   [Material.WOOD]: {
     name: 'Wood',
-    glyphs: ['=', '≡', '║', '|'],
+    glyphs: ['═', '≡', '║', '▓', '▒', '░'],
     debugColor: '#873600',
     useEdgeOverride: true,
   },
   [Material.STONE]: {
     name: 'Stone',
-    glyphs: ['.', ':', ';', 'o'],
+    glyphs: ['.', ':', ';', 'o', '▓', '▒', '░'],
     debugColor: '#7f8c8d',
     useEdgeOverride: true,
   },
@@ -84,13 +98,13 @@ export const MATERIAL_DEFS: Record<Material, MaterialDef> = {
   },
   [Material.ROOF_TILES]: {
     name: 'Roof Tiles',
-    glyphs: ['=', '≡', '─', '═'],
+    glyphs: ['▓', '▒', '░', '█', '/', '\\'],
     debugColor: '#2c3e50',
     useEdgeOverride: true,
   },
   [Material.SHOJI]: {
     name: 'Shoji',
-    glyphs: ['+', '|', '-', '#'],
+    glyphs: ['+', '|', '-', '#', '▒', '░'],
     debugColor: '#f1c40f',
     useEdgeOverride: true,
   },
@@ -108,7 +122,7 @@ export const MATERIAL_DEFS: Record<Material, MaterialDef> = {
   },
   [Material.TORII]: {
     name: 'Torii',
-    glyphs: ['║', '═', '╦', '#'],
+    glyphs: ['║', '═', '╦', '#', '▓', '▒'],
     debugColor: '#922b21',
     useEdgeOverride: true,
   },

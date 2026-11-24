@@ -5,7 +5,7 @@
 // Hardware-accelerated material rasterization (60+ FPS locked).
 // ============================================================================
 
-import { Material } from './materials.ts';
+import { Material, Surface } from './materials.ts';
 import { SceneBuffer } from '../render/sceneBuffer.ts';
 
 export class TestScene {
@@ -14,7 +14,7 @@ export class TestScene {
     const h = buffer.height;  // 224
 
     // 1. Clear buffers: deep night moss ground + balanced ambient moonlight
-    buffer.clear('#0a1410', '#1c2838');
+    buffer.clear('#0a1410', '#2b3b50');
 
     // 2. Multi-tier Isometric Ground: Garden lawn, elevated stone terrace, path, pond
     this.renderTerraceAndGround(buffer, w, h);
@@ -48,7 +48,7 @@ export class TestScene {
   // --------------------------------------------------------------------------
   private renderTerraceAndGround(buffer: SceneBuffer, w: number, h: number): void {
     // Base grass lawn (lower tier)
-    buffer.drawRect(0, 0, w, h, '#0c1a14', Material.GRASS);
+    buffer.drawRect(0, 0, w, h, '#0c1a14', Material.GRASS, Surface.HORIZONTAL);
 
     // Subtle patches of wild grass tufts around courtyard borders
     const grassTufts = [
@@ -58,7 +58,7 @@ export class TestScene {
       { x: 345, y: 20, w: 50, h: 40 },
     ];
     for (const tuft of grassTufts) {
-      buffer.drawRect(tuft.x, tuft.y, tuft.w, tuft.h, '#0e241b', Material.GRASS);
+      buffer.drawRect(tuft.x, tuft.y, tuft.w, tuft.h, '#0e241b', Material.GRASS, Surface.HORIZONTAL);
     }
 
     // Elevated Stone Terrace (Upper Tier where the Dojo sits)
@@ -70,7 +70,7 @@ export class TestScene {
       { x: 240, y: 165 },
       { x: 130, y: 110 },
     ];
-    buffer.drawPolygon(wallLeft, '#2b3642', Material.STONE);
+    buffer.drawPolygon(wallLeft, '#2b3642', Material.STONE, Surface.VERTICAL);
 
     // Front-right terrace retaining wall (in shadow)
     const wallRight = [
@@ -79,7 +79,7 @@ export class TestScene {
       { x: 350, y: 110 },
       { x: 240, y: 165 },
     ];
-    buffer.drawPolygon(wallRight, '#1e2630', Material.STONE);
+    buffer.drawPolygon(wallRight, '#1e2630', Material.STONE, Surface.VERTICAL);
 
     // Terrace flat gravel courtyard surface (top of terrace)
     const terraceTop = [
@@ -88,7 +88,29 @@ export class TestScene {
       { x: 240, y: 155 },
       { x: 130, y: 100 },
     ];
-    buffer.drawPolygon(terraceTop, '#141c26', Material.NONE);
+    buffer.drawPolygon(terraceTop, '#141c26', Material.STONE, Surface.HORIZONTAL);
+    buffer.strokePolygon(terraceTop, '#4a5868', 1);
+
+    // Masonry seams make the retaining wall read as extruded stone courses.
+    for (let i = 1; i < 4; i++) {
+      const t = i / 4;
+      buffer.drawLine(
+        130 + 110 * t,
+        100 + 55 * t,
+        130 + 110 * t,
+        110 + 55 * t,
+        '#151d27',
+        1
+      );
+      buffer.drawLine(
+        240 + 110 * t,
+        155 - 55 * t,
+        240 + 110 * t,
+        165 - 55 * t,
+        '#111821',
+        1
+      );
+    }
 
     // Drop shadow under the elevated terrace onto the lower grass
     buffer.drawGroundShadow([
@@ -109,7 +131,7 @@ export class TestScene {
       { x: stairX + 16, y: stairY + 16 },
       { x: stairX - 16, y: stairY },
     ];
-    buffer.drawPolygon(stairPts, '#3d4b5a', Material.STONE);
+    buffer.drawPolygon(stairPts, '#3d4b5a', Material.STONE, Surface.HORIZONTAL);
   }
 
   private renderPath(buffer: SceneBuffer): void {
@@ -133,10 +155,10 @@ export class TestScene {
       buffer.geometryCtx.fill();
 
       // Stone dark side bevel (gives 3D stone height)
-      buffer.drawEllipse(st.x, st.y + 2, st.rx, st.ry, '#242b33', Material.STONE);
+      buffer.drawEllipse(st.x, st.y + 2, st.rx, st.ry, '#242b33', Material.STONE, Surface.VERTICAL);
 
       // Stone top flat surface (Material.STONE)
-      buffer.drawEllipse(st.x, st.y, st.rx - 1, st.ry - 1, '#3b4754', Material.STONE);
+      buffer.drawEllipse(st.x, st.y, st.rx - 1, st.ry - 1, '#3b4754', Material.STONE, Surface.HORIZONTAL);
 
       // Top highlight rim
       buffer.geometryCtx.fillStyle = '#506173';
@@ -160,10 +182,10 @@ export class TestScene {
     buffer.geometryCtx.fill();
 
     // Smooth stone embankment rim (2:1 ellipse)
-    buffer.drawEllipse(px, py, prx + 4, pry + 3, '#26313c', Material.STONE);
+    buffer.drawEllipse(px, py, prx + 4, pry + 3, '#26313c', Material.STONE, Surface.HORIZONTAL);
 
     // Deep water surface
-    buffer.drawEllipse(px, py, prx, pry, '#0a2033', Material.WATER);
+    buffer.drawEllipse(px, py, prx, pry, '#0a2033', Material.WATER, Surface.HORIZONTAL);
 
     // Isometric wooden footbridge spanning across the pond
     const bx0 = px - 24;
@@ -184,7 +206,7 @@ export class TestScene {
       { x: bx1 - 6, y: by1 + 5 },
       { x: bx0 - 6, y: by0 + 5 },
     ];
-    buffer.drawPolygon(bridgePts, '#553924', Material.WOOD);
+    buffer.drawPolygon(bridgePts, '#553924', Material.WOOD, Surface.HORIZONTAL);
   }
 
   // --------------------------------------------------------------------------
@@ -215,6 +237,16 @@ export class TestScene {
       { x: cx + 32, y: cy + 18 },
     ], 0.6);
 
+    // Long directional roof shadow anchors the building to the terrace.
+    buffer.drawGroundShadow([
+      { x: lx - 12, y: ly + 4 },
+      { x: cx + 10, y: cy + 8 },
+      { x: rx + 34, y: ry + 12 },
+      { x: rx + 52, y: ry + 30 },
+      { x: cx + 30, y: cy + 34 },
+      { x: lx + 12, y: ly + 24 },
+    ], 0.42);
+
     // 2. Elevated Timber Veranda (Engawa) Platform
     // Left Veranda face (Lit by lantern & moon)
     const engawaLeft = [
@@ -223,7 +255,7 @@ export class TestScene {
       { x: cx, y: cy + 1 },
       { x: lx - 4, y: ly - 1 },
     ];
-    buffer.drawPolygon(engawaLeft, '#5a3b25', Material.WOOD);
+    buffer.drawPolygon(engawaLeft, '#5a3b25', Material.WOOD, Surface.VERTICAL);
 
     // Right Veranda face (in shadow)
     const engawaRight = [
@@ -232,7 +264,7 @@ export class TestScene {
       { x: rx + 4, y: ry - 1 },
       { x: cx, y: cy + 1 },
     ];
-    buffer.drawPolygon(engawaRight, '#3a2517', Material.WOOD);
+    buffer.drawPolygon(engawaRight, '#3a2517', Material.WOOD, Surface.VERTICAL);
 
     // 3. FRONT-LEFT WALL (SOUTH-WEST) — BRIGHTLY LIT WITH GLOWING SHOJI DOORS
     const wallLeftPts = [
@@ -241,7 +273,7 @@ export class TestScene {
       { x: cx, y: cy - wallH },
       { x: lx, y: ly - wallH },
     ];
-    buffer.drawPolygon(wallLeftPts, '#222e3b', Material.WOOD);
+    buffer.drawPolygon(wallLeftPts, '#222e3b', Material.WOOD, Surface.VERTICAL);
 
     // Glowing Shoji sliding screen bays along the Left Wall (Facing Viewer)
     const numBays = 3;
@@ -261,7 +293,7 @@ export class TestScene {
         { x: x0, y: y0 - wallH + 5 },
       ];
       // Golden glowing paper
-      buffer.drawPolygon(bayPts, '#f8cf6e', Material.SHOJI);
+      buffer.drawPolygon(bayPts, '#f8cf6e', Material.SHOJI, Surface.VERTICAL);
 
       // Deep eave shadow across upper portion of Shoji bay
       const bayShadowPts = [
@@ -270,7 +302,7 @@ export class TestScene {
         { x: x1, y: y1 - wallH + 5 },
         { x: x0, y: y0 - wallH + 5 },
       ];
-      buffer.drawPolygon(bayShadowPts, '#9e7529', Material.SHOJI);
+      buffer.drawPolygon(bayShadowPts, '#9e7529', Material.SHOJI, Surface.VERTICAL);
     }
 
     // 4. FRONT-RIGHT WALL (SOUTH-EAST) — DEEP SHADOW TIMBER WALL WITH WINDOW
@@ -280,7 +312,7 @@ export class TestScene {
       { x: rx, y: ry - wallH },
       { x: cx, y: cy - wallH },
     ];
-    buffer.drawPolygon(wallRightPts, '#121820', Material.WOOD);
+    buffer.drawPolygon(wallRightPts, '#182432', Material.WOOD, Surface.VERTICAL);
 
     // Decorative shoji window on the right wall (dimmer in shadow)
     const winPts = [
@@ -289,12 +321,12 @@ export class TestScene {
       { x: cx + 48, y: cy - 24 - 17 },
       { x: cx + 22, y: cy - 11 - 17 },
     ];
-    buffer.drawPolygon(winPts, '#c89d42', Material.SHOJI);
+    buffer.drawPolygon(winPts, '#c89d42', Material.SHOJI, Surface.VERTICAL);
 
     // Timber posts (Left corner, Central corner, Right corner)
-    buffer.drawRect(cx - 2, cy - wallH - 2, 5, wallH + 4, '#2e1c12', Material.WOOD);
-    buffer.drawRect(lx - 2, ly - wallH - 2, 4, wallH + 4, '#2e1c12', Material.WOOD);
-    buffer.drawRect(rx - 2, ry - wallH - 2, 4, wallH + 4, '#1c100a', Material.WOOD);
+    buffer.drawRect(cx - 2, cy - wallH - 2, 5, wallH + 4, '#2e1c12', Material.WOOD, Surface.VERTICAL);
+    buffer.drawRect(lx - 2, ly - wallH - 2, 4, wallH + 4, '#2e1c12', Material.WOOD, Surface.VERTICAL);
+    buffer.drawRect(rx - 2, ry - wallH - 2, 4, wallH + 4, '#1c100a', Material.WOOD, Surface.VERTICAL);
 
     // 5. ISOMETRIC ROOF (IRIMOYA-ZUKURI WITH 3D HIP SLOPES)
     const eaveFront = { x: cx, y: cy - wallH + 8 };
@@ -321,7 +353,8 @@ export class TestScene {
       { x: ridgeL.x, y: ridgeL.y },
       { x: eaveLeft.x + 18, y: ridgeY + 4 },
     ];
-    buffer.drawPolygon(roofLeftFace, '#344c66', Material.ROOF_TILES);
+    buffer.drawPolygon(roofLeftFace, '#344c66', Material.ROOF_TILES, Surface.SLOPE_LEFT);
+    buffer.strokePolygon(roofLeftFace, '#6f8fae', 1);
 
     // Tile courses across the Left Roof Face
     for (let i = 1; i < 4; i++) {
@@ -335,7 +368,7 @@ export class TestScene {
         { x: tx1, y: ty1 },
         { x: tx1, y: ty1 - 1 },
         { x: tx0, y: ty0 - 1 },
-      ], '#223244', Material.ROOF_TILES);
+      ], '#223244', Material.ROOF_TILES, Surface.SLOPE_LEFT);
     }
 
     // RIGHT ROOF PLANE (Facing Away from Moon — Deep Dark Shadow Indigo)
@@ -345,7 +378,8 @@ export class TestScene {
       { x: ridgeR.x, y: ridgeR.y },
       { x: ridgeL.x, y: ridgeL.y },
     ];
-    buffer.drawPolygon(roofRightFace, '#182432', Material.ROOF_TILES);
+    buffer.drawPolygon(roofRightFace, '#203146', Material.ROOF_TILES, Surface.SLOPE_RIGHT);
+    buffer.strokePolygon(roofRightFace, '#3f5872', 1);
 
     // Tile courses across the Right Roof Face
     for (let i = 1; i < 4; i++) {
@@ -359,7 +393,7 @@ export class TestScene {
         { x: tx1, y: ty1 },
         { x: tx1, y: ty1 - 1 },
         { x: tx0, y: ty0 - 1 },
-      ], '#0f1822', Material.ROOF_TILES);
+      ], '#162335', Material.ROOF_TILES, Surface.SLOPE_RIGHT);
     }
 
     // Central Corner Hip Ridge (Sumimune) running down to eaveFront
@@ -369,7 +403,7 @@ export class TestScene {
       { x: ridgeL.x + 2, y: ridgeL.y },
       { x: ridgeL.x - 2, y: ridgeL.y },
     ];
-    buffer.drawPolygon(hipRidgePts, '#4f7196', Material.ROOF_TILES);
+    buffer.drawPolygon(hipRidgePts, '#4f7196', Material.ROOF_TILES, Surface.HORIZONTAL);
 
     // Ridge Beam (Mune) with ornamental Onigawara crests
     buffer.drawPolygon([
@@ -377,12 +411,18 @@ export class TestScene {
       { x: ridgeR.x + 2, y: ridgeR.y + 1 },
       { x: ridgeR.x + 2, y: ridgeR.y - 4 },
       { x: ridgeL.x - 2, y: ridgeL.y - 4 },
-    ], '#6086b0', Material.ROOF_TILES);
+    ], '#6086b0', Material.ROOF_TILES, Surface.HORIZONTAL);
 
     // Flared upturned eave tips (Sori)
-    buffer.drawRect(eaveFront.x - 2, eaveFront.y - 2, 5, 4, '#6b95c4', Material.ROOF_TILES);
-    buffer.drawRect(eaveLeft.x - 2, eaveLeft.y - 2, 4, 4, '#6b95c4', Material.ROOF_TILES);
-    buffer.drawRect(eaveRight.x - 2, eaveRight.y - 2, 4, 4, '#4a6b8f', Material.ROOF_TILES);
+    buffer.drawRect(eaveFront.x - 2, eaveFront.y - 2, 5, 4, '#6b95c4', Material.ROOF_TILES, Surface.HORIZONTAL);
+    buffer.drawRect(eaveLeft.x - 2, eaveLeft.y - 2, 4, 4, '#6b95c4', Material.ROOF_TILES, Surface.HORIZONTAL);
+    buffer.drawRect(eaveRight.x - 2, eaveRight.y - 2, 4, 4, '#4a6b8f', Material.ROOF_TILES, Surface.HORIZONTAL);
+
+    // Crisp ridge and eave highlights survive the ASCII downsample as a
+    // continuous silhouette instead of a noisy tile texture.
+    buffer.drawLine(ridgeL.x, ridgeL.y, ridgeR.x, ridgeR.y, '#a5c4e2', 1.5);
+    buffer.drawLine(eaveLeft.x, eaveLeft.y, eaveFront.x, eaveFront.y, '#6f8fae', 1);
+    buffer.drawLine(eaveFront.x, eaveFront.y, eaveRight.x, eaveRight.y, '#405a76', 1);
   }
 
   // --------------------------------------------------------------------------
@@ -405,13 +445,13 @@ export class TestScene {
 
     // 2. Pillars & Stone Foundation Collars
     // Back-right pillar (in shadow)
-    buffer.drawRect(p1x - 3, p1y - 3, 8, 4, '#242c36', Material.STONE);
-    buffer.drawRect(p1x - 2, p1y - pillarH, 5, pillarH, '#881813', Material.TORII);
+    buffer.drawRect(p1x - 3, p1y - 3, 8, 4, '#242c36', Material.STONE, Surface.HORIZONTAL);
+    buffer.drawRect(p1x - 2, p1y - pillarH, 5, pillarH, '#881813', Material.TORII, Surface.VERTICAL);
 
     // Front-left pillar (lit)
-    buffer.drawRect(p0x - 3, p0y - 3, 8, 4, '#28323c', Material.STONE);
-    buffer.drawRect(p0x - 2, p0y - pillarH, 5, pillarH, '#b32019', Material.TORII);
-    buffer.drawRect(p0x - 1, p0y - pillarH, 2, pillarH, '#d92c24', Material.TORII); // 3D highlight
+    buffer.drawRect(p0x - 3, p0y - 3, 8, 4, '#28323c', Material.STONE, Surface.HORIZONTAL);
+    buffer.drawRect(p0x - 2, p0y - pillarH, 5, pillarH, '#b32019', Material.TORII, Surface.VERTICAL);
+    buffer.drawRect(p0x - 1, p0y - pillarH, 2, pillarH, '#d92c24', Material.TORII, Surface.VERTICAL); // 3D highlight
 
     // 3. Lower Tie Beam (Nuki) connecting pillars
     const nukiPts = [
@@ -420,7 +460,7 @@ export class TestScene {
       { x: p1x + 6, y: p1y - pillarH + 8 },
       { x: p0x - 6, y: p0y - pillarH + 8 },
     ];
-    buffer.drawPolygon(nukiPts, '#bf231c', Material.TORII);
+    buffer.drawPolygon(nukiPts, '#bf231c', Material.TORII, Surface.HORIZONTAL);
 
     // 4. Upper Main Lintel (Kasagi & Shimaki) with curved upturned tips
     const lintelPts = [
@@ -429,7 +469,8 @@ export class TestScene {
       { x: p1x + 16, y: p1y - pillarH - 7 },
       { x: p0x - 16, y: p0y - pillarH - 7 },
     ];
-    buffer.drawPolygon(lintelPts, '#db2921', Material.TORII);
+    buffer.drawPolygon(lintelPts, '#db2921', Material.TORII, Surface.HORIZONTAL);
+    buffer.strokePolygon(lintelPts, '#ff6a55', 1);
 
     // Black protective roof cap on torii lintel
     buffer.drawPolygon([
@@ -437,7 +478,7 @@ export class TestScene {
       { x: p1x + 15, y: p1y - pillarH - 7 },
       { x: p1x + 17, y: p1y - pillarH - 9 },
       { x: p0x - 17, y: p0y - pillarH - 9 },
-    ], '#182028', Material.WOOD);
+    ], '#182028', Material.WOOD, Surface.HORIZONTAL);
   }
 
   // --------------------------------------------------------------------------
@@ -464,7 +505,7 @@ export class TestScene {
       { x: x1, y: y1 - 1 },
       { x: x0, y: y0 - 1 },
     ];
-    buffer.drawPolygon(railPts1, '#442b1a', Material.WOOD);
+    buffer.drawPolygon(railPts1, '#442b1a', Material.WOOD, Surface.HORIZONTAL);
 
     const railPts2 = [
       { x: x0, y: y0 - 9 },
@@ -472,7 +513,7 @@ export class TestScene {
       { x: x1, y: y1 - 7 },
       { x: x0, y: y0 - 7 },
     ];
-    buffer.drawPolygon(railPts2, '#442b1a', Material.WOOD);
+    buffer.drawPolygon(railPts2, '#442b1a', Material.WOOD, Surface.HORIZONTAL);
 
     // Vertical posts along front fence
     const numPosts = 4;
@@ -480,9 +521,9 @@ export class TestScene {
       const t = i / (numPosts - 1);
       const px = Math.round(x0 + t * (x1 - x0));
       const py = Math.round(y0 + t * (y1 - y0));
-      buffer.drawRect(px - 2, py - 14, 4, 16, '#543621', Material.WOOD);
-      buffer.drawRect(px - 1, py - 14, 2, 16, '#6b452b', Material.WOOD);
-      buffer.drawRect(px - 3, py - 16, 6, 3, '#2a1a10', Material.WOOD);
+      buffer.drawRect(px - 2, py - 14, 4, 16, '#543621', Material.WOOD, Surface.VERTICAL);
+      buffer.drawRect(px - 1, py - 14, 2, 16, '#6b452b', Material.WOOD, Surface.VERTICAL);
+      buffer.drawRect(px - 3, py - 16, 6, 3, '#2a1a10', Material.WOOD, Surface.HORIZONTAL);
     }
   }
 
@@ -512,12 +553,12 @@ export class TestScene {
       { x: tx + 3, y: ty - 18 },
       { x: tx + 10, y: ty + 2 },
     ];
-    buffer.drawPolygon(trunkPts, '#24160e', Material.WOOD);
-    buffer.drawRect(tx - 3, ty - 8, 3, 28, '#3d2518', Material.WOOD);
+    buffer.drawPolygon(trunkPts, '#24160e', Material.WOOD, Surface.VERTICAL);
+    buffer.drawRect(tx - 3, ty - 8, 3, 28, '#3d2518', Material.WOOD, Surface.VERTICAL);
 
     // Branches reaching leftward over pond
-    buffer.drawRect(tx - 38, ty - 24, 26, 5, '#24160e', Material.WOOD);
-    buffer.drawRect(tx - 52, ty - 6, 38, 4, '#24160e', Material.WOOD);
+    buffer.drawRect(tx - 38, ty - 24, 26, 5, '#24160e', Material.WOOD, Surface.HORIZONTAL);
+    buffer.drawRect(tx - 52, ty - 6, 38, 4, '#24160e', Material.WOOD, Surface.HORIZONTAL);
 
     // 3. Layered Cloud-Pruned Foliage Pads (2:1 Isometric Canopies)
     const canopies = [
@@ -536,7 +577,7 @@ export class TestScene {
       buffer.geometryCtx.fill();
 
       // Main foliage body
-      buffer.drawEllipse(c.x, c.y, c.rx - 1, c.ry - 1, '#112e22', Material.FOLIAGE);
+      buffer.drawEllipse(c.x, c.y, c.rx - 1, c.ry - 1, '#112e22', Material.FOLIAGE, Surface.HORIZONTAL);
 
       // Top moonlit highlight
       buffer.geometryCtx.fillStyle = '#1c4a37';
@@ -555,13 +596,13 @@ export class TestScene {
     const ly = 96;
 
     // Cord suspended from eave
-    buffer.drawRect(lx + 2, ly - 8, 2, 8, '#1e120a', Material.WOOD);
+    buffer.drawRect(lx + 2, ly - 8, 2, 8, '#1e120a', Material.WOOD, Surface.VERTICAL);
     // Caps
-    buffer.drawRect(lx - 2, ly - 1, 10, 2, '#2e180d', Material.WOOD);
-    buffer.drawRect(lx - 2, ly + 11, 10, 2, '#2e180d', Material.WOOD);
+    buffer.drawRect(lx - 2, ly - 1, 10, 2, '#2e180d', Material.WOOD, Surface.HORIZONTAL);
+    buffer.drawRect(lx - 2, ly + 11, 10, 2, '#2e180d', Material.WOOD, Surface.HORIZONTAL);
     // Glowing paper body
-    buffer.drawRect(lx, ly + 1, 6, 10, '#ffa834', Material.LANTERN);
-    buffer.drawRect(lx + 1, ly + 2, 4, 8, '#fff3c4', Material.LANTERN);
+    buffer.drawRect(lx, ly + 1, 6, 10, '#ffa834', Material.LANTERN, Surface.CYLINDER);
+    buffer.drawRect(lx + 1, ly + 2, 4, 8, '#fff3c4', Material.LANTERN, Surface.CYLINDER);
 
     // 2. Stone Garden Lantern (Tōrō) along Path
     const tx = 152;
@@ -576,13 +617,13 @@ export class TestScene {
     ], 0.6);
 
     // Pedestal
-    buffer.drawRect(tx - 5, ty + 9, 12, 4, '#242b33', Material.STONE);
-    buffer.drawRect(tx - 3, ty + 6, 8, 3, '#303944', Material.STONE);
-    buffer.drawRect(tx - 2, ty + 1, 5, 6, '#3d4855', Material.STONE);
+    buffer.drawRect(tx - 5, ty + 9, 12, 4, '#242b33', Material.STONE, Surface.HORIZONTAL);
+    buffer.drawRect(tx - 3, ty + 6, 8, 3, '#303944', Material.STONE, Surface.HORIZONTAL);
+    buffer.drawRect(tx - 2, ty + 1, 5, 6, '#3d4855', Material.STONE, Surface.VERTICAL);
 
     // Glowing Firebox Window (Hibukuro)
-    buffer.drawRect(tx - 3, ty - 5, 8, 5, '#ffa02a', Material.LANTERN);
-    buffer.drawRect(tx - 2, ty - 4, 5, 3, '#fff2b8', Material.LANTERN);
+    buffer.drawRect(tx - 3, ty - 5, 8, 5, '#ffa02a', Material.LANTERN, Surface.VERTICAL);
+    buffer.drawRect(tx - 2, ty - 4, 5, 3, '#fff2b8', Material.LANTERN, Surface.VERTICAL);
 
     // Umbrella Roof Cap (Kasa)
     const roofPts = [
@@ -591,8 +632,8 @@ export class TestScene {
       { x: tx + 3, y: ty - 9 },
       { x: tx - 1, y: ty - 9 },
     ];
-    buffer.drawPolygon(roofPts, '#3e4a57', Material.STONE);
-    buffer.drawRect(tx, ty - 11, 2, 2, '#5c6c7d', Material.STONE);
+    buffer.drawPolygon(roofPts, '#3e4a57', Material.STONE, Surface.HORIZONTAL);
+    buffer.drawRect(tx, ty - 11, 2, 2, '#5c6c7d', Material.STONE, Surface.HORIZONTAL);
   }
 
   // --------------------------------------------------------------------------

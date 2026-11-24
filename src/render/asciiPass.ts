@@ -6,7 +6,7 @@
 // ============================================================================
 
 import { CONFIG } from '../config.ts';
-import { Material, MATERIAL_DEFS } from '../game/materials.ts';
+import { Material, MATERIAL_DEFS, Surface } from '../game/materials.ts';
 import { GlyphAtlas, quantizeRGB } from './glyphAtlas.ts';
 import { SceneBuffer } from './sceneBuffer.ts';
 
@@ -22,6 +22,7 @@ export class AsciiPass {
   private cellG: Uint8Array;
   private cellB: Uint8Array;
   private cellMat: Uint8Array;
+  private cellSurface: Uint8Array;
 
   // Cached directional glyph IDs
   private glyphHoriz: number;
@@ -47,6 +48,7 @@ export class AsciiPass {
     this.cellG = new Uint8Array(totalCells);
     this.cellB = new Uint8Array(totalCells);
     this.cellMat = new Uint8Array(totalCells);
+    this.cellSurface = new Uint8Array(totalCells);
 
     // Pre-cache directional glyph indices
     this.glyphHoriz = atlas.getGlyphIndex(CONFIG.render.directionalGlyphs.horizontal);
@@ -77,6 +79,7 @@ export class AsciiPass {
     this.cellG = new Uint8Array(totalCells);
     this.cellB = new Uint8Array(totalCells);
     this.cellMat = new Uint8Array(totalCells);
+    this.cellSurface = new Uint8Array(totalCells);
   }
 
   /**
@@ -99,35 +102,57 @@ export class AsciiPass {
     const geomData = sceneBuffer.geometryCtx.getImageData(0, 0, sceneWidth, sceneHeight).data;
     const matData = sceneBuffer.materialCtx.getImageData(0, 0, sceneWidth, sceneHeight).data;
 
-    // 2. Downsample buffer into grid cells
+    // 2. Downsample each complete scene-buffer region into one character cell.
+    // Averaging the whole region (rather than two arbitrary pixels) preserves
+    // broad faces and stops fine geometry from turning into aliased noise.
     for (let cy = 0; cy < rows; cy++) {
       const cellRowOffset = cy * cols;
       const py0 = Math.floor(cy * stepY);
-      const py1 = Math.min(sceneHeight - 1, py0 + 1);
+      const py1 = Math.max(py0, Math.min(sceneHeight - 1, Math.ceil((cy + 1) * stepY) - 1));
 
       for (let cx = 0; cx < cols; cx++) {
         const px0 = Math.floor(cx * stepX);
-        const px1 = Math.min(sceneWidth - 1, px0 + 1);
+        const px1 = Math.max(px0, Math.min(sceneWidth - 1, Math.ceil((cx + 1) * stepX) - 1));
 
-        // Sample 2x2 patch from lit scene canvas
-        const i00 = (py0 * sceneWidth + px0) * 4;
-        const i10 = (py0 * sceneWidth + px1) * 4;
-        const i01 = (py1 * sceneWidth + px0) * 4;
-        const i11 = (py1 * sceneWidth + px1) * 4;
+        let rSum = 0;
+        let gSum = 0;
+        let bSum = 0;
+        let grSum = 0;
+        let ggSum = 0;
+        let gbSum = 0;
+        let sampleCount = 0;
 
-        const r = (litData[i00] + litData[i10] + litData[i01] + litData[i11]) >> 2;
-        const g = (litData[i00 + 1] + litData[i10 + 1] + litData[i01 + 1] + litData[i11 + 1]) >> 2;
-        const b = (litData[i00 + 2] + litData[i10 + 2] + litData[i01 + 2] + litData[i11 + 2]) >> 2;
+        for (let py = py0; py <= py1; py++) {
+          const rowOffset = py * sceneWidth;
+          for (let px = px0; px <= px1; px++) {
+            const i = (rowOffset + px) * 4;
+            rSum += litData[i];
+            gSum += litData[i + 1];
+            bSum += litData[i + 2];
+            grSum += geomData[i];
+            ggSum += geomData[i + 1];
+            gbSum += geomData[i + 2];
+            sampleCount++;
+          }
+        }
+
+        const r = (rSum / sampleCount) | 0;
+        const g = (gSum / sampleCount) | 0;
+        const b = (bSum / sampleCount) | 0;
         const litLum = (r * 77 + g * 150 + b * 29) >> 8;
 
-        // Sample 2x2 patch from unlit geometry canvas for Sobel
-        const gr = (geomData[i00] + geomData[i10] + geomData[i01] + geomData[i11]) >> 2;
-        const gg = (geomData[i00 + 1] + geomData[i10 + 1] + geomData[i01 + 1] + geomData[i11 + 1]) >> 2;
-        const gb = (geomData[i00 + 2] + geomData[i10 + 2] + geomData[i01 + 2] + geomData[i11 + 2]) >> 2;
+        const gr = (grSum / sampleCount) | 0;
+        const gg = (ggSum / sampleCount) | 0;
+        const gb = (gbSum / sampleCount) | 0;
         const geomLum = (gr * 77 + gg * 150 + gb * 29) >> 8;
 
-        // Sample material ID from hardware-rasterized red channel
-        const mat = matData[i00] || matData[i10] || matData[i01] || matData[i11] || Material.NONE;
+        // Sample material and surface orientation from the cell center. Edge
+        // cells are still represented by the geometry-driven Sobel pass.
+        const centerX = (px0 + px1) >> 1;
+        const centerY = (py0 + py1) >> 1;
+        const matIndex = (centerY * sceneWidth + centerX) * 4;
+        const mat = matData[matIndex] || Material.NONE;
+        const surface = matData[matIndex + 1] || Surface.FLAT;
 
         const cellIdx = cellRowOffset + cx;
         this.cellR[cellIdx] = r;
@@ -136,6 +161,7 @@ export class AsciiPass {
         this.cellLitLum[cellIdx] = litLum;
         this.cellGeomLum[cellIdx] = geomLum;
         this.cellMat[cellIdx] = mat;
+        this.cellSurface[cellIdx] = surface;
       }
     }
 
@@ -155,6 +181,7 @@ export class AsciiPass {
     const cellG = this.cellG;
     const cellB = this.cellB;
     const cellMat = this.cellMat;
+    const cellSurface = this.cellSurface;
 
     const animTick = Math.floor(gameTime * 4);
     const fireTick = Math.floor(gameTime * 10);
@@ -169,6 +196,7 @@ export class AsciiPass {
         const cellIdx = rowThis + cx;
         const litLum = cellLitLum[cellIdx];
         const mat = cellMat[cellIdx];
+        const surface = cellSurface[cellIdx];
         const r = cellR[cellIdx];
         const g = cellG[cellIdx];
         const b = cellB[cellIdx];
@@ -196,12 +224,28 @@ export class AsciiPass {
         const edgeMag = absGx + absGy;
 
         let glyphId = 0;
+        let isEdge = false;
 
-        // Check if edge is strong enough to override
+        // Check if edge is strong enough to override. Internal texture lines
+        // (shoji frames, tile courses, mortar) stay in the material pattern;
+        // only material/face boundaries or very high-contrast contours become
+        // structural ASCII edges.
         const matDef = MATERIAL_DEFS[mat as Material];
         const allowEdge = !matDef || matDef.useEdgeOverride;
+        const materialBoundary =
+          cellMat[rowThis + xLeft] !== mat ||
+          cellMat[rowThis + xRight] !== mat ||
+          cellMat[rowAbove + cx] !== mat ||
+          cellMat[rowBelow + cx] !== mat;
+        const surfaceBoundary =
+          cellSurface[rowThis + xLeft] !== surface ||
+          cellSurface[rowThis + xRight] !== surface ||
+          cellSurface[rowAbove + cx] !== surface ||
+          cellSurface[rowBelow + cx] !== surface;
+        const highContrastEdge = edgeMag > edgeThreshold * 1.75;
 
-        if (allowEdge && edgeMag > edgeThreshold) {
+        if (allowEdge && edgeMag > edgeThreshold && (materialBoundary || surfaceBoundary || highContrastEdge)) {
+          isEdge = true;
           if (absGx > (absGy << 1)) {
             // Dominant horizontal gradient -> Vertical contour line
             glyphId = this.glyphVert;
@@ -221,20 +265,41 @@ export class AsciiPass {
           const matGlyphs = this.materialGlyphIds[mat];
           switch (mat) {
             case Material.GRASS: {
-              // Elegant sparse lawn: ~25% of cells show grass blades, rest are clean open turf
-              const hash = (cx * 13 + cy * 29) % 8;
-              glyphId = hash === 0 ? matGlyphs[0] : (hash === 1 ? matGlyphs[1] : (hash === 2 ? matGlyphs[2] : 0));
+              // Sparse, low-contrast blades keep the lawn from visually
+              // competing with the solid architecture.
+              const hash = (cx * 13 + cy * 29) % 12;
+              glyphId = hash === 0 ? matGlyphs[0] : (hash === 1 ? matGlyphs[1] : 0);
+              break;
+            }
+            case Material.STONE: {
+              if (surface === Surface.VERTICAL) {
+                // Solid retaining walls with subtle mortar and face shading.
+                const seam = (cx + cy * 2) % 7 === 0;
+                const shade = litLum > 95 ? 3 : (litLum > 45 ? 4 : 5);
+                glyphId = seam ? matGlyphs[2] : matGlyphs[shade];
+              } else {
+                const shade = litLum > 120 ? 3 : (litLum > 55 ? 4 : 5);
+                const hash = (cx * 7 + cy * 11) % 13;
+                glyphId = hash === 0 ? matGlyphs[1] : matGlyphs[shade];
+              }
               break;
             }
             case Material.ROOF_TILES: {
-              // Horizontal stepped ceramic tile courses
-              const course = cy % 3;
-              glyphId = course === 0 ? matGlyphs[0] : (course === 1 ? matGlyphs[1] : matGlyphs[2]);
+              const shade = litLum > 145 ? 0 : (litLum > 85 ? 1 : (litLum > 35 ? 2 : 3));
+              if (surface === Surface.SLOPE_LEFT || surface === Surface.SLOPE_RIGHT) {
+                // Broad tile planes use solid density shading; sparse diagonal
+                // courses describe the roof pitch without visual static.
+                const slopeGlyph = surface === Surface.SLOPE_LEFT ? matGlyphs[4] : matGlyphs[5];
+                const course = (cx + cy * 2 + (surface === Surface.SLOPE_LEFT ? 0 : 1)) % 5;
+                glyphId = course === 0 ? slopeGlyph : matGlyphs[shade];
+              } else {
+                glyphId = (cy % 4 === 0) ? matGlyphs[4] : matGlyphs[shade];
+              }
               break;
             }
             case Material.FOLIAGE: {
-              const hash = (cx * 11 + cy * 17 + (litLum >> 4)) & 3;
-              glyphId = matGlyphs[hash];
+              const hash = (cx * 11 + cy * 17 + (litLum >> 4)) & 7;
+              glyphId = hash < 2 ? matGlyphs[hash] : (hash === 2 ? matGlyphs[2] : 0);
               break;
             }
             case Material.WATER: {
@@ -250,26 +315,42 @@ export class AsciiPass {
               break;
             }
             case Material.SHOJI: {
-              // Shoji paper screen lattice pattern
-              if ((cx & 1) === 0 && (cy & 1) === 0) {
+              // Large, quiet shoji panels. A sparse lattice reads as paper
+              // screens without turning every lit wall into visual static.
+              if ((cx % 5) === 0 && (cy % 4) === 0) {
                 glyphId = this.atlas.getGlyphIndex('+');
-              } else if ((cx & 1) === 0) {
+              } else if ((cx % 5) === 0) {
                 glyphId = this.glyphVert;
-              } else if ((cy & 1) === 0) {
+              } else if ((cy % 4) === 0) {
                 glyphId = this.glyphHoriz;
               } else {
-                glyphId = this.atlas.getGlyphIndex('#');
+                glyphId = litLum > 150 ? matGlyphs[4] : matGlyphs[5];
               }
               break;
             }
             case Material.WOOD: {
-              const idx = (cy & 1) ? 0 : 1;
-              glyphId = matGlyphs[idx % matGlyphs.length];
+              if (surface === Surface.VERTICAL || surface === Surface.CYLINDER) {
+                // Vertical timber faces use solid shading and sparse grain.
+                const seam = (cx * 7 + cy * 3) % 11 === 0;
+                const shade = litLum > 105 ? 3 : (litLum > 45 ? 4 : 5);
+                glyphId = seam ? matGlyphs[2] : matGlyphs[shade];
+              } else if (surface === Surface.HORIZONTAL || surface === Surface.SLOPE_LEFT || surface === Surface.SLOPE_RIGHT) {
+                const shade = litLum > 105 ? 3 : (litLum > 45 ? 4 : 5);
+                glyphId = (cy % 3 === 0) ? matGlyphs[0] : matGlyphs[shade];
+              } else {
+                const idx = (cy & 1) ? 0 : 1;
+                glyphId = matGlyphs[idx % matGlyphs.length];
+              }
               break;
             }
             case Material.TORII: {
-              // Heavy Torii pillars & crossbeams
-              glyphId = matGlyphs[(cx + cy) % matGlyphs.length];
+              if (surface === Surface.VERTICAL || surface === Surface.CYLINDER) {
+                glyphId = (cx & 1) === 0 ? matGlyphs[0] : matGlyphs[4];
+              } else if (surface === Surface.HORIZONTAL) {
+                glyphId = (cy & 1) === 0 ? matGlyphs[1] : matGlyphs[2];
+              } else {
+                glyphId = matGlyphs[(cx + cy) % 4];
+              }
               break;
             }
             default: {
@@ -291,14 +372,22 @@ export class AsciiPass {
         let gB = g;
         let bB = b;
 
+        // Brighten silhouettes and darken concave contact areas. This makes
+        // extruded faces read as volumes instead of evenly lit textures.
+        const neighborAvg = (l00 + l10 + l20 + l01 + l21 + l02 + l12 + l22) >> 3;
+        const centerGeomLum = cellGeomLum[cellIdx];
+        const aoBoost = neighborAvg > centerGeomLum + 14 ? 0.80 : 1.0;
+        const edgeBoost = isEdge ? 1.20 : 1.0;
+        const finalBoost = briBoost * aoBoost * edgeBoost;
+
         if (maxC > minC && maxC > 12) {
-          rB = Math.min(255, Math.max(0, Math.round((minC + (r - minC) * satBoost) * briBoost)));
-          gB = Math.min(255, Math.max(0, Math.round((minC + (g - minC) * satBoost) * briBoost)));
-          bB = Math.min(255, Math.max(0, Math.round((minC + (b - minC) * satBoost) * briBoost)));
+          rB = Math.min(255, Math.max(0, Math.round((minC + (r - minC) * satBoost) * finalBoost)));
+          gB = Math.min(255, Math.max(0, Math.round((minC + (g - minC) * satBoost) * finalBoost)));
+          bB = Math.min(255, Math.max(0, Math.round((minC + (b - minC) * satBoost) * finalBoost)));
         } else {
-          rB = Math.min(255, Math.round(r * briBoost));
-          gB = Math.min(255, Math.round(g * briBoost));
-          bB = Math.min(255, Math.round(b * briBoost));
+          rB = Math.min(255, Math.round(r * finalBoost));
+          gB = Math.min(255, Math.round(g * finalBoost));
+          bB = Math.min(255, Math.round(b * finalBoost));
         }
 
         const colorIdx = quantizeRGB(rB, gB, bB);

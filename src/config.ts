@@ -42,6 +42,11 @@ export const CONFIG = {
     
     // Background cell tint opacity (gives subtle CRT phosphor glow)
     cellBgOpacity: 0.14,
+
+    // Depth cues applied after lighting: cool haze in the distance and a
+    // soft vignette around the foreground focal area.
+    depthHazeColor: 'rgba(24, 44, 70, 0.20)',
+    vignetteColor: 'rgba(0, 2, 8, 0.38)',
     
     // Quantized color palette resolution: 4 levels per channel (4x4x4 = 64 colors)
     paletteLevels: [18, 75, 160, 255],

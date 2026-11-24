@@ -5,7 +5,7 @@
 // ============================================================================
 
 import { CONFIG } from '../config.ts';
-import { Material, MATERIAL_DEFS } from '../game/materials.ts';
+import { Material, MATERIAL_DEFS, Surface } from '../game/materials.ts';
 
 export class SceneBuffer {
   public cols: number;
@@ -127,8 +127,9 @@ export class SceneBuffer {
     this.lightCtx.fillStyle = ambientLightColor;
     this.lightCtx.fillRect(0, 0, this.width, this.height);
 
-    // Clear material canvas to GRASS material
-    this.materialCtx.fillStyle = `rgb(${Material.GRASS}, 0, 0)`;
+    // Clear material canvas to NONE. The scene explicitly paints grass,
+    // stone, architecture and sky so cut-outs never inherit a hidden material.
+    this.materialCtx.fillStyle = `rgb(${Material.NONE}, ${Surface.FLAT}, 0)`;
     this.materialCtx.fillRect(0, 0, this.width, this.height);
   }
 
@@ -141,15 +142,16 @@ export class SceneBuffer {
     w: number,
     h: number,
     color: string,
-    material: Material = Material.NONE
+    material: Material = Material.NONE,
+    surface: Surface = Surface.FLAT
   ): void {
     this.geometryCtx.fillStyle = color;
     this.geometryCtx.fillRect(x, y, w, h);
 
-    if (material !== Material.NONE) {
-      this.materialCtx.fillStyle = `rgb(${material}, 0, 0)`;
-      this.materialCtx.fillRect(x, y, w, h);
-    }
+    // Always write the material, including NONE, so cut-outs and terrace tops
+    // do not accidentally inherit the grass material underneath.
+    this.materialCtx.fillStyle = `rgb(${material}, ${surface}, 0)`;
+    this.materialCtx.fillRect(x, y, w, h);
   }
 
   /**
@@ -160,19 +162,18 @@ export class SceneBuffer {
     cy: number,
     radius: number,
     color: string,
-    material: Material = Material.NONE
+    material: Material = Material.NONE,
+    surface: Surface = Surface.FLAT
   ): void {
     this.geometryCtx.fillStyle = color;
     this.geometryCtx.beginPath();
     this.geometryCtx.arc(cx, cy, radius, 0, Math.PI * 2);
     this.geometryCtx.fill();
 
-    if (material !== Material.NONE) {
-      this.materialCtx.fillStyle = `rgb(${material}, 0, 0)`;
-      this.materialCtx.beginPath();
-      this.materialCtx.arc(cx, cy, radius, 0, Math.PI * 2);
-      this.materialCtx.fill();
-    }
+    this.materialCtx.fillStyle = `rgb(${material}, ${surface}, 0)`;
+    this.materialCtx.beginPath();
+    this.materialCtx.arc(cx, cy, radius, 0, Math.PI * 2);
+    this.materialCtx.fill();
   }
 
   /**
@@ -184,19 +185,18 @@ export class SceneBuffer {
     rx: number,
     ry: number,
     color: string,
-    material: Material = Material.NONE
+    material: Material = Material.NONE,
+    surface: Surface = Surface.FLAT
   ): void {
     this.geometryCtx.fillStyle = color;
     this.geometryCtx.beginPath();
     this.geometryCtx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
     this.geometryCtx.fill();
 
-    if (material !== Material.NONE) {
-      this.materialCtx.fillStyle = `rgb(${material}, 0, 0)`;
-      this.materialCtx.beginPath();
-      this.materialCtx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
-      this.materialCtx.fill();
-    }
+    this.materialCtx.fillStyle = `rgb(${material}, ${surface}, 0)`;
+    this.materialCtx.beginPath();
+    this.materialCtx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
+    this.materialCtx.fill();
   }
 
   /**
@@ -205,7 +205,8 @@ export class SceneBuffer {
   public drawPolygon(
     points: { x: number; y: number }[],
     color: string,
-    material: Material = Material.NONE
+    material: Material = Material.NONE,
+    surface: Surface = Surface.FLAT
   ): void {
     if (points.length < 3) return;
 
@@ -219,17 +220,61 @@ export class SceneBuffer {
     this.geometryCtx.closePath();
     this.geometryCtx.fill();
 
-    // Hardware rasterize on material canvas
-    if (material !== Material.NONE) {
-      this.materialCtx.fillStyle = `rgb(${material}, 0, 0)`;
-      this.materialCtx.beginPath();
-      this.materialCtx.moveTo(points[0].x, points[0].y);
-      for (let i = 1; i < points.length; i++) {
-        this.materialCtx.lineTo(points[i].x, points[i].y);
-      }
-      this.materialCtx.closePath();
-      this.materialCtx.fill();
+    // Hardware rasterize material ID and surface orientation.
+    this.materialCtx.fillStyle = `rgb(${material}, ${surface}, 0)`;
+    this.materialCtx.beginPath();
+    this.materialCtx.moveTo(points[0].x, points[0].y);
+    for (let i = 1; i < points.length; i++) {
+      this.materialCtx.lineTo(points[i].x, points[i].y);
     }
+    this.materialCtx.closePath();
+    this.materialCtx.fill();
+  }
+
+  /**
+   * Draw a thin geometry-only line. Useful for ridges, eave highlights and
+   * masonry seams that should influence Sobel edges without adding a material.
+   */
+  public drawLine(
+    x0: number,
+    y0: number,
+    x1: number,
+    y1: number,
+    color: string,
+    width = 1
+  ): void {
+    const ctx = this.geometryCtx;
+    ctx.save();
+    ctx.strokeStyle = color;
+    ctx.lineWidth = width;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(x0, y0);
+    ctx.lineTo(x1, y1);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  /** Outline a projected face so its silhouette survives ASCII downsampling. */
+  public strokePolygon(
+    points: { x: number; y: number }[],
+    color: string,
+    width = 1
+  ): void {
+    if (points.length < 2) return;
+    const ctx = this.geometryCtx;
+    ctx.save();
+    ctx.strokeStyle = color;
+    ctx.lineWidth = width;
+    ctx.lineJoin = 'round';
+    ctx.beginPath();
+    ctx.moveTo(points[0].x, points[0].y);
+    for (let i = 1; i < points.length; i++) {
+      ctx.lineTo(points[i].x, points[i].y);
+    }
+    ctx.closePath();
+    ctx.stroke();
+    ctx.restore();
   }
 
   /**
@@ -294,7 +339,29 @@ export class SceneBuffer {
     ctx.globalCompositeOperation = 'lighter';
     ctx.drawImage(this.lightCanvas, 0, 0);
 
+    // 4. Cool atmospheric perspective. The upper half of the scene reads as
+    // farther away, while the foreground retains stronger contrast.
     ctx.globalCompositeOperation = 'source-over';
+    const haze = ctx.createLinearGradient(0, 0, 0, this.height);
+    haze.addColorStop(0, CONFIG.render.depthHazeColor);
+    haze.addColorStop(0.55, 'rgba(10, 20, 34, 0.04)');
+    haze.addColorStop(1, 'rgba(0, 0, 0, 0.08)');
+    ctx.fillStyle = haze;
+    ctx.fillRect(0, 0, this.width, this.height);
+
+    // 5. Soft edge vignette focuses the eye on the lit courtyard.
+    const vignette = ctx.createRadialGradient(
+      this.width * 0.5,
+      this.height * 0.52,
+      this.height * 0.18,
+      this.width * 0.5,
+      this.height * 0.52,
+      this.width * 0.62
+    );
+    vignette.addColorStop(0, 'rgba(0, 0, 0, 0)');
+    vignette.addColorStop(1, CONFIG.render.vignetteColor);
+    ctx.fillStyle = vignette;
+    ctx.fillRect(0, 0, this.width, this.height);
   }
 
   /**

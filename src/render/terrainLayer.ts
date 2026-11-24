@@ -102,7 +102,7 @@ export class TerrainLayer {
       const sampleCell = (sx: number, sy: number) => {
         // Screen-space position (grass strands are tracked in this space).
         const px = x + sx * step; const py = y + sy * step;
-        const wx = Math.round(toWorldX(px, py)); const wy = Math.round(toWorldY(px, py));
+        const wx = toWorldX(px, py); const wy = toWorldY(px, py);
         const index = sy * cols + sx;
         if (waterDepth(wx, wy) > 0) this.waterMask[index] = 1;
         const cell = landscapeCell(wx, wy, 0, 17);
@@ -116,11 +116,11 @@ export class TerrainLayer {
           this.grassIds[o] = this.renderer.glyph('\\', cell.color); this.grassIds[o + 1] = this.renderer.glyph(cell.glyph === '!' ? '!' : '|', cell.color); this.grassIds[o + 2] = this.renderer.glyph('/', cell.color);
           this.grassIds[o + 3] = this.renderer.glyph('`', tip); this.grassIds[o + 4] = this.renderer.glyph("'", tip); this.grassIds[o + 5] = this.renderer.glyph(',', tip);
           // About half the stems are tall: they grow a bright tip into the cell above.
-          this.grassTip[r] = noise(wx, wy, 131) > .45 ? 1 : 0;
+          this.grassTip[r] = noise(Math.round(wx * 2), Math.round(wy * 2), 131) > .45 ? 1 : 0;
         }
         // Only sparse highlights animate. Water retains fixed brightness and
         // occupancy, so a current cannot flash an entire river band on/off.
-        if (waterDepth(wx, wy) > 0 && noise(wx, wy, 97) > .88) this.water.push({ index, x: wx, y: wy, color: cell.color });
+        if (waterDepth(wx, wy) > 0 && noise(Math.round(wx * 2), Math.round(wy * 2), 97) > .88) this.water.push({ index, x: wx, y: wy, color: cell.color });
       };
       for (let sy = 0; sy < rows; sy++) {
         if (!shift || sy + dy < 0 || sy + dy >= rows) for (let sx = 0; sx < cols; sx++) sampleCell(sx, sy);

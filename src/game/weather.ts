@@ -113,12 +113,13 @@ export class Weather {
     if (this.flash > 0) { const f = this.flash; l.ambient = [l.ambient[0] + f * .8, l.ambient[1] + f * .85, l.ambient[2] + f]; }
   }
 
-  /** Firelight: the caller adds these as point lights (x, y world; flickering strength 0..1). */
-  lights(time: number): { x: number; y: number; radius: number; strength: number }[] {
-    return this.fires.map((f, i) => ({ x: f.x, y: f.y - f.height * .4, radius: 70 + f.width * .9, strength: .85 + Math.sin(time * 11 + i) * .1 + Math.sin(time * 23 + i * 3) * .06 }));
+  /** Firelight: the caller adds these as point lights (x, y world, z height; flickering strength 0..1). */
+  lights(time: number): { x: number; y: number; z: number; radius: number; strength: number }[] {
+    return this.fires.map((f, i) => ({ x: f.x, y: f.y, z: f.height * .4, radius: 70 + f.width * .9, strength: .85 + Math.sin(time * 11 + i) * .1 + Math.sin(time * 23 + i * 3) * .06 }));
   }
 
-  draw(ids: Uint32Array, layers: Uint8Array, cols: number, rows: number, camX: number, camY: number, step: number): void {
+  draw(ids: Uint32Array, layers: Uint8Array, cols: number, rows: number, camX: number, camY: number, step: number,
+    toCell?: (x: number, y: number, z: number) => [number, number]): void {
     const g = this.g; const useLayers = layers.length === ids.length;
     const put = (sx: number, sy: number, id: number) => {
       const x = Math.round(sx); const y = Math.round(sy);
@@ -128,7 +129,7 @@ export class Weather {
     const p = this.particles;
     for (let i = 0; i < p.count; i++) {
       const kind = p.kind[i]; const x = p.x[i]; const y = p.y[i]; const z = p.z[i];
-      const sx = (x - camX) / step; const sy = (y - z - camY) / step;
+      const [sx, sy] = toCell ? toCell(x, y, z) : [(x - camX) / step, (y - z - camY) / step];
       if (sx < -2 || sy < -2 || sx > cols + 2 || sy > rows + 2) continue;
       const age = 1 - p.life[i] / p.maxLife[i];
       switch (kind) {

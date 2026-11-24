@@ -19,7 +19,7 @@ export interface Mover {
   driver?: string;
 }
 
-export interface MoverState { x: number; y: number; facing: 'left' | 'right'; moving: boolean }
+export interface MoverState { x: number; y: number; dirX: number; dirY: number; facing: 'left' | 'right'; moving: boolean }
 
 const lengths = new WeakMap<Mover, number[]>();
 function segmentLengths(m: Mover): number[] {
@@ -48,10 +48,14 @@ export function moverAt(m: Mover, time: number): MoverState {
   while (i < segs.length - 1 && s > segs[i]) { s -= segs[i]; i++; }
   const u = segs[i] ? Math.min(1, s / segs[i]) : 0;
   const x1 = m.path[i * 2], y1 = m.path[i * 2 + 1], x2 = m.path[i * 2 + 2], y2 = m.path[i * 2 + 3];
-  const dx = (x2 - x1) * (forward ? 1 : -1);
-  // Vertical legs keep the last horizontal facing of the route direction.
-  const facing = dx > .01 ? 'right' : dx < -.01 ? 'left' : forward ? 'right' : 'left';
-  return { x: x1 + (x2 - x1) * u, y: y1 + (y2 - y1) * u, facing, moving };
+  const sdx = (x2 - x1) * (forward ? 1 : -1);
+  const sdy = (y2 - y1) * (forward ? 1 : -1);
+  const len = Math.hypot(sdx, sdy) || 1;
+  const dirX = sdx / len; const dirY = sdy / len;
+  // Screen-horizontal direction determines left/right sprite facing in iso (screenX = wx - wy).
+  const screenDX = dirX - dirY;
+  const facing = screenDX > .01 ? 'right' : screenDX < -.01 ? 'left' : forward ? 'right' : 'left';
+  return { x: x1 + (x2 - x1) * u, y: y1 + (y2 - y1) * u, dirX, dirY, facing, moving };
 }
 
 /** Asset heights so every species ends up a believable person height (≈50 units, dwarves ≈36). */

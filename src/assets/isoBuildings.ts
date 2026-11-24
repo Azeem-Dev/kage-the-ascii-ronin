@@ -1,11 +1,11 @@
-import { noise, type AsciiAsset, type AsciiCell } from './types.ts';
+import { noise, type AsciiAsset, type AsciiCell, type AssetOptions } from './types.ts';
 
-/** Isometric buildings for `?view=iso`: a box with two visible walls (front y=+b,
- * side x=+a) and a gabled roof whose ridge runs along world x. Everything is
- * rasterised in screen cells with the same projection as src/game/view.ts:
+/**
+ * Isometric buildings & directional settlement props for the 2.5D view.
+ * Projection matches src/game/view.ts:
  *   screenX = X - Y,  screenY = (X + Y) / 3 - Z
- * so the art lines up with the isometric ground exactly. Sizes are world units
- * at scale 1; the anchor is the footprint centre on the ground. */
+ * Anchor is the footprint centre on the ground (Z = 0).
+ */
 export interface IsoHouseSpec {
   id: string;
   name: string;
@@ -17,117 +17,329 @@ export interface IsoHouseSpec {
   plaster: string; timber: string; stone: string;
   roof: string; window: string; door: string;
   thatch?: boolean;
+  /** Shift world Y back from the legacy front-base anchor when placing. */
+  shiftBack?: boolean;
+  /** Half-extent used when projecting ground shadows. */
+  shadowA?: number; shadowB?: number;
 }
 
 const hex = (c: string, f: number, add = 0) => '#' + [1, 3, 5].map(i =>
   Math.max(0, Math.min(255, Math.round(parseInt(c.slice(i, i + 2), 16) * f + add))).toString(16).padStart(2, '0')).join('');
 
+export const shadeHex = hex;
+
 export interface HouseTextures {
-  /** Wall texture at (u along the wall, v height); door only on the main front. */
   facade: (u: number, v: number, length: number, seed: number, door: boolean) => [string, string] | null;
-  /** Roof texture at local (X along ridge, Y across it). */
   roof: (X: number, Y: number, back: boolean) => [string, string];
 }
 
-/** Shared facade/roof textures (used by the isometric sprite and the 3D ray-caster). */
+function variantPalette(s: IsoHouseSpec, variant: number): IsoHouseSpec {
+  const v = ((Math.floor(variant) % 3) + 3) % 3;
+  if (v === 0) return s;
+  if (s.id === 'iso-townhouse') {
+    return v === 1
+      ? { ...s, plaster: '#d5c6a8', roof: '#475e7d', window: '#ffd884', door: '#7a2c24' }
+      : { ...s, plaster: '#c8ccb0', roof: '#3d6346', window: '#ffe092', door: '#2e6338' };
+  }
+  if (s.id === 'iso-manor') {
+    return v === 1
+      ? { ...s, plaster: '#b8b6a8', roof: '#2d4b44', window: '#ffe59c' }
+      : { ...s, plaster: '#dcded8', roof: '#4a6b8a', window: '#fff0b8' };
+  }
+  if (s.id === 'iso-cottage') {
+    return v === 1
+      ? { ...s, plaster: '#d4ccb8', timber: '#52402b', roof: '#a27b34' }
+      : { ...s, plaster: '#e3d5b3', roof: '#8f6132', window: '#ffdf88' };
+  }
+  if (s.id === 'iso-hovel') {
+    return v === 1
+      ? { ...s, plaster: '#6e5237', roof: '#5a4a2a', window: '#665238' }
+      : { ...s, plaster: '#856544', roof: '#7c6739', window: '#ffb952' };
+  }
+  return s;
+}
+
+/** Shared facade/roof textures for isometric houses. */
 export function houseTextures(s: IsoHouseSpec): HouseTextures {
   const { b, wall: H } = s;
   const storeyH = H / s.storeys;
 
-  /** Facade texture at (u along the wall, v height), before face shading. */
   const facade = (u: number, v: number, length: number, seed: number, door: boolean): [string, string] | null => {
-    if (v < 3) return [noise(Math.floor(u), Math.floor(v), 5) > .5 ? '#' : '=', s.stone];
+    // Stone plinth at base
+    if (v < 4.5) {
+      const n = noise(Math.floor(u * .7), Math.floor(v), seed + 5);
+      const mortar = Math.floor(u) % 6 === 0 || Math.floor(v) === 2;
+      return [mortar ? '-' : n > .5 ? '#' : '=', hex(s.stone, mortar ? .75 : .9 + n * .18)];
+    }
+    // Eave shadow under the roof overhang
+    const eave = v > H - 3 ? .58 : v > H - 5 ? .78 : 1;
     const storey = Math.floor(v / storeyH); const sv = v - storey * storeyH;
-    if (sv < 1.2 && storey > 0) return ['=', s.timber];                                 // floor beam
-    if (Math.abs(u % 16) < 1.3 || u < 1.3 || u > length - 1.3) return ['|', s.timber];  // posts and corners
-    const bay = Math.floor(u / 16); const bu = u - bay * 16;
-    if (door && storey === 0 && Math.abs(u - length / 2) < 3.5 && sv < 13) return [sv > 11 ? '-' : '|', s.door];
-    if (bu > 4.5 && bu < 11.5 && sv > storeyH * .32 && sv < storeyH * .32 + 8) {
-      const lit = noise(bay, storey, seed) > .45;
-      if (Math.abs(bu - 8) < .7 || Math.abs(sv - storeyH * .32 - 4) < .6) return ['+', s.timber]; // window cross
-      return [lit ? '#' : '%', lit ? s.window : hex(s.window, .35)];
+    if (sv < 1.5 && storey > 0) return ['=', hex(s.timber, eave)];
+    if (Math.abs(u % 18) < 1.3 || u < 1.4 || u > length - 1.4) return ['|', hex(s.timber, eave)];
+    const bay = Math.floor(u / 18); const bu = u - bay * 18;
+    // Diagonal timber bracing on first/upper bays
+    if (s.id !== 'iso-manor' && (bay + storey) % 2 === 0 && Math.abs((bu - 9) - (sv - storeyH * .5) * .6) < .8) {
+      return ['/', hex(s.timber, .92 * eave)];
+    }
+    if (door && storey === 0 && Math.abs(u - length / 2) < 4.5 && sv < 16) {
+      if (Math.abs(u - length / 2) > 3.6 || sv > 14.5) return ['|', hex(s.timber, .9)];
+      return [sv % 4 < 1 ? '=' : '|', hex(s.door, .9 + noise(Math.floor(u), Math.floor(v), seed + 2) * .18)];
+    }
+    if (bu > 4.5 && bu < 13.5 && sv > storeyH * .3 && sv < storeyH * .3 + 9.5) {
+      const lit = noise(bay, storey, seed) > .38;
+      if (bu < 5.7 || bu > 12.3) return ['|', hex(s.timber, .95 * eave)];
+      if (sv < storeyH * .3 + 1.2) return ['=', hex(s.stone, .95 * eave)];
+      if (Math.abs(bu - 9) < .7 || Math.abs(sv - storeyH * .3 - 4.7) < .7) return ['+', hex(s.timber, eave)];
+      return [lit ? '#' : '%', lit ? s.window : hex(s.window, .32)];
     }
     const n = noise(Math.floor(u), Math.floor(v), seed + 9);
-    return [n > .8 ? ':' : n > .55 ? '.' : n > .3 ? '=' : '-', hex(s.plaster, .92 + n * .12)];
+    const tone = (.9 + n * .16) * eave;
+    return [n > .82 ? ':' : n > .56 ? '.' : n > .3 ? '=' : '-', hex(s.plaster, tone)];
   };
 
   const roofCell = (X: number, Y: number, back: boolean): [string, string] => {
-    if (Math.abs(Y) < 1.6) return ['=', hex(s.roof, back ? .9 : 1.25)];                // ridge cap
-    const row = Math.floor(Math.abs(Y) / 2.2);
+    if (Math.abs(Y) < 1.8) return ['=', hex(s.roof, back ? .95 : 1.28)];
+    const row = Math.floor(Math.abs(Y) / 2.4);
     const n = noise(Math.floor(X), row, 77);
-    const light = (back ? .62 : .95) * (1 - Math.abs(Y) / (b * 3)) + n * .1;
-    if (s.thatch) return [n > .5 ? '/' : n > .25 ? '\\' : '|', hex(s.roof, light)];
-    return [(Math.floor(X) + row * 2) % 4 === 0 ? '|' : row % 2 ? '=' : '-', hex(s.roof, light + (row % 2) * .05)];
+    const light = (back ? .68 : .98) * (1 - Math.abs(Y) / (b * 3.2)) + n * .12;
+    if (Math.abs(Y) > b + 1.6) return ['=', hex(s.timber, back ? .8 : 1.05)];
+    if (s.thatch) {
+      const ragged = Math.abs(Y) > b + 1.2 && n < .35;
+      if (ragged) return ['|', hex(s.roof, light * .7)];
+      return [n > .55 ? '/' : n > .28 ? '\\' : '|', hex(s.roof, light)];
+    }
+    return [(Math.floor(X) + row * 2) % 4 === 0 ? '|' : row % 2 ? '=' : '#', hex(s.roof, light + (row % 2) * .06)];
   };
   return { facade, roof: roofCell };
 }
 
-export const shadeHex = hex;
-
-export function isoHouse(s: IsoHouseSpec): AsciiAsset {
-  const { a, b, wall: H, rise: R } = s;
-  const top = Math.ceil((a + b) / 3 + H + R) + 2;
-  const halfW = Math.ceil(a + b) + 3;
+function isoHouse(base: IsoHouseSpec): AsciiAsset {
+  const { a, b, wall: H, rise: R } = base;
+  const top = Math.ceil((a + b) / 3 + H + R) + 12;
+  const halfW = Math.ceil(a + b) + 5;
   const width = halfW * 2 + 1;
-  const height = top + Math.ceil((a + b) / 3) + 2;
-  const { facade, roof: roofCell } = houseTextures(s);
+  const height = top + Math.ceil((a + b) / 3) + 4;
 
-  const cells: AsciiCell[] = [];
-  for (let cy = 0; cy < height; cy++) for (let cx = 0; cx < width; cx++) {
-    const sx = cx - halfW + .5; const sy = cy - top + .5;
-    let hit: [string, string] | null = null;
-    // Painter's order, back to front: back roof, side wall + gable, front wall, front roof.
-    const backDen = 2 / 3 - R / b;
-    if (backDen > .05) {
-      const Y = (sy - sx / 3 + H + R) / backDen; const X = sx + Y;
-      if (Y >= -b - 2 && Y <= 0 && X >= -a - 2 && X <= a + 2) hit = roofCell(X, Y, true);
-    }
-    {
-      const Y = a - sx; const z = (a + Y) / 3 - sy;
-      const gable = H + R * (1 - Math.abs(Y) / b);
-      if (Y >= -b && Y <= b && z >= 0 && z <= gable) {
-        const [g, c] = z <= H ? facade(Y + b, z, 2 * b, 31, false)! : (Math.hypot(Y, z - H - R * .45) < 3 ? ['o', s.window] : ['=', s.plaster]);
-        hit = [g, hex(c, .66)];                                   // side faces away from the light
+  const generate = (o: AssetOptions): AsciiCell[] => {
+    const s = variantPalette(base, o.variant);
+    const { facade, roof: roofCell } = houseTextures(s);
+    const seed = o.seed + o.variant * 31;
+    const cells: AsciiCell[] = [];
+    const ruined = s.id === 'iso-hovel' && (o.variant % 3) === 1;
+    const chimX = a * .48; const chimY = -b * .38;
+
+    for (let cy = 0; cy < height; cy++) for (let cx = 0; cx < width; cx++) {
+      const sx = cx - halfW + .5; const sy = cy - top + .5;
+      let hit: [string, string] | null = null;
+      // Back roof slope
+      const backDen = 2 / 3 - R / b;
+      if (backDen > .05) {
+        const Y = (sy - sx / 3 + H + R) / backDen; const X = sx + Y;
+        if (Y >= -b - 3 && Y <= 0 && X >= -a - 3 && X <= a + 3) {
+          if (!ruined || noise(Math.floor(X / 4), Math.floor(Y / 3), seed + 5) > .25) hit = roofCell(X, Y, true);
+        }
       }
+      // Stone chimney rising above back roof
+      if (s.id !== 'iso-hovel') {
+        const cX = sx - chimY; const cZ = (chimX + chimY) / 3 - sy;
+        if (Math.abs(cX - chimX) <= 3.5 && cZ >= H + R * .4 && cZ <= H + R + 10) {
+          hit = [Math.floor(cZ) % 3 === 0 ? '=' : '#', hex(s.stone, cZ > H + R + 8 ? 1.15 : .88)];
+        }
+      }
+      // Side wall + gable (world +X face)
+      {
+        const Y = a - sx; const z = (a + Y) / 3 - sy;
+        const gable = H + R * (1 - Math.abs(Y) / b);
+        if (Y >= -b && Y <= b && z >= 0 && z <= gable) {
+          const gCol = z <= H ? facade(Y + b, z, 2 * b, seed + 31, false)! : (Math.hypot(Y, z - H - R * .45) < 3.5 ? ['o', s.window] : ['=', s.plaster]);
+          // AssetRenderer.shade already dims the shadow-facing side; keep .82 so it stays readable at night.
+          hit = [gCol[0], hex(gCol[1], .82)];
+        }
+      }
+      // Front wall (world +Y face)
+      {
+        const X = sx + b; const z = (X + b) / 3 - sy;
+        if (X >= -a && X <= a && z >= 0 && z <= H) {
+          if (!ruined || X < a * .45 || z < H * .65 || noise(Math.floor(X / 3), Math.floor(z / 3), seed + 9) > .35) {
+            hit = facade(X + a, z, 2 * a, seed + 13, true);
+          }
+        }
+      }
+      // Front roof slope
+      {
+        const Y = (sy - sx / 3 + H + R) / (2 / 3 + R / b); const X = sx + Y;
+        if (Y >= 0 && Y <= b + 3.5 && X >= -a - 3 && X <= a + 3) {
+          if (!ruined || X < a * .35 || noise(Math.floor(X / 4), Math.floor(Y / 3), seed + 19) > .28) hit = roofCell(X, Y, false);
+        }
+      }
+      if (hit) cells.push({ x: cx, y: cy, glyph: hit[0], color: hit[1] });
     }
-    {
-      const X = sx + b; const z = (X + b) / 3 - sy;
-      if (X >= -a && X <= a && z >= 0 && z <= H) hit = facade(X + a, z, 2 * a, 13, true);
-    }
-    {
-      const Y = (sy - sx / 3 + H + R) / (2 / 3 + R / b); const X = sx + Y;
-      if (Y >= 0 && Y <= b + 3 && X >= -a - 2 && X <= a + 2) hit = roofCell(X, Y, false);
-    }
-    if (hit) cells.push({ x: cx, y: cy, glyph: hit[0], color: hit[1] });
-  }
+    return cells;
+  };
 
-  // Ground footprint: a row of circles along world x covering the whole box.
   const footprint: { x: number; y: number; radius: number }[] = [];
-  for (let x = -a + b * .6; x <= a - b * .6 + .01; x += b * .6) footprint.push({ x, y: 0, radius: b * .95 });
+  for (let x = -a + b * .6; x <= a - b * .6 + .01; x += b * .6) footprint.push({ x, y: 0, radius: b * .88 });
 
   return {
-    id: s.id, version: 1, name: s.name, category: 'Prop',
-    description: `Isometric ${s.name.toLowerCase()} for the 2.5D view.`,
+    id: base.id, version: 2, name: base.name, category: 'Prop',
+    description: `Isometric ${base.name.toLowerCase()} for the 2.5D view.`,
     width, height, anchor: { x: halfW, y: top },
-    variants: ['default'],
-    generate: () => cells,
+    variants: ['Standard', 'Weathered', 'Warm'],
+    generate,
     footprint,
+    light: base.id === 'iso-hovel' ? undefined : { x: 0, y: -Math.round(H * .4), radius: Math.round((a + b) * 1.15), color: [1, .64, .28] },
   };
 }
 
-/** Building asset id → isometric replacement, and how far its old anchor (the
- * front base) sits in front of the new one (the footprint centre). */
+// ------------------------------------------------------------------ Isometric settlement props
+
+function isoRaster(w: number, h: number, ax: number, ay: number, draw: (put: (wx: number, wy: number, wz: number, g: string, c: string) => void) => void): AsciiCell[] {
+  const grid = new Map<number, AsciiCell>();
+  const put = (wx: number, wy: number, wz: number, glyph: string, color: string) => {
+    const cx = Math.round(ax + (wx - wy));
+    const cy = Math.round(ay + (wx + wy) / 3 - wz);
+    if (cx < 0 || cy < 0 || cx >= w || cy >= h) return;
+    grid.set(cy * w + cx, { x: cx, y: cy, glyph, color });
+  };
+  draw(put);
+  return [...grid.values()];
+}
+
+function isoMarketStall(o: AssetOptions): AsciiCell[] {
+  const v = ((Math.floor(o.variant) % 3) + 3) % 3;
+  const stripeColors = [['#9e322e', '#ebe0d2'], ['#2b5e96', '#eae6da'], ['#437842', '#e4ca5e']][v];
+  const a = 24; const b = 13; const w = 84; const h = 76; const ax = 42; const ay = 60;
+  return isoRaster(w, h, ax, ay, put => {
+    // Back posts
+    for (let z = 0; z <= 34; z++) { put(-a, -b, z, '|', '#4a3222'); put(a, -b, z, '|', '#4a3222'); }
+    // Counter box (side x=+a, front y=+b, top z=12)
+    for (let z = 0; z <= 12; z++) for (let y = -b; y <= b; y++) put(a, y, z, z === 12 ? '=' : '#', z === 12 ? '#b59868' : '#583f2a');
+    for (let z = 0; z <= 12; z++) for (let x = -a; x <= a; x++) put(x, b, z, z === 12 ? '=' : (x % 6 === 0 ? '|' : '#'), z === 12 ? '#c4a874' : '#735336');
+    for (let y = -b; y <= b; y++) for (let x = -a; x <= a; x++) {
+      const n = noise(Math.floor(x), Math.floor(y), o.seed + 5);
+      const goods = v === 0 ? (n > .75 ? '*' : 'o') : v === 1 ? '#' : '=';
+      const col = v === 0 ? (n < .35 ? '#cf4b36' : n < .7 ? '#e6ba43' : '#739846') : v === 1 ? (n > .5 ? '#3b6791' : '#dcd0b2') : '#8fa8aa';
+      put(x, y, 13, Math.abs(x) < a - 2 && Math.abs(y) < b - 2 ? goods : '=', Math.abs(x) < a - 2 && Math.abs(y) < b - 2 ? col : '#b59868');
+    }
+    // Front posts
+    for (let z = 0; z <= 27; z++) { put(-a, b, z, '|', '#5e422c'); put(a, b, z, '|', '#5e422c'); }
+    // Sloped striped canopy
+    for (let y = -b - 2; y <= b + 2; y++) for (let x = -a - 2; x <= a + 2; x++) {
+      const u = (y + b + 2) / (2 * b + 4);
+      const z = 35 - u * 8;
+      const stripe = Math.floor((x + a + 2) / 6) & 1;
+      put(x, y, z, y > b ? '=' : '#', hex(stripeColors[stripe], 1 - u * .15));
+    }
+  });
+}
+
+function isoFence(o: AssetOptions): AsciiCell[] {
+  const v = ((Math.floor(o.variant) % 3) + 3) % 3;
+  const col = v === 2 ? '#5a6872' : v === 1 ? '#786644' : '#725236';
+  const dark = v === 2 ? '#343c44' : '#422e1d';
+  const a = 24; const w = 56; const h = 38; const ax = 28; const ay = 28;
+  return isoRaster(w, h, ax, ay, put => {
+    for (const x of [-a, 0, a]) for (let z = 0; z <= 16; z++) put(x, 0, z, z === 16 ? '^' : '|', dark);
+    if (v === 2) {
+      for (let x = -a + 3; x < a; x += 3) for (let z = 2; z <= 14; z++) put(x, 0, z, z === 14 ? '^' : '|', col);
+    }
+    for (const rz of [6, 12]) for (let x = -a; x <= a; x++) put(x, 0, rz, '=', col);
+  });
+}
+
+function isoRuinWall(o: AssetOptions): AsciiCell[] {
+  const v = ((Math.floor(o.variant) % 3) + 3) % 3;
+  const stone = v === 1 ? '#5b6268' : '#787d6f';
+  const side = hex(stone, .78);
+  const a = 32; const b = 5; const w = 80; const h = 72; const ax = 40; const ay = 56;
+  return isoRaster(w, h, ax, ay, put => {
+    for (let x = -a; x <= a; x++) {
+      const jag = Math.floor(noise(Math.floor(x / 3), 1, o.seed + 30) * 8);
+      const topZ = (v === 0 ? 18 : 28) - jag - (Math.abs(x) > 26 ? 5 : 0);
+      for (let z = 0; z <= topZ; z++) {
+        // Breach/arch doorway in the middle
+        if (Math.abs(x) < 9 && (v !== 2 ? z < 11 : z < 18 - (x * x) * .08)) continue;
+        const n = noise(x, z, o.seed + 31);
+        const moss = v === 2 && n > .72;
+        const g = z >= topZ - 1 ? '=' : n > .6 ? '#' : '%';
+        for (let y = -b; y <= b; y++) {
+          if (y === b || x === a || z >= topZ - 1) put(x, y, z, g, moss ? '#657a49' : (x === a ? side : hex(stone, .8 + n * .25)));
+        }
+      }
+    }
+  });
+}
+
+function isoTent(o: AssetOptions): AsciiCell[] {
+  const v = ((Math.floor(o.variant) % 3) + 3) % 3;
+  const main = v === 1 ? '#6b4832' : '#4a6b5e';
+  const a = 24; const b = 18; const ridge = 30; const w = 96; const h = 70; const ax = 48; const ay = 52;
+  return isoRaster(w, h, ax, ay, put => {
+    for (let y = -b; y <= b; y++) for (let x = -a; x <= a; x++) {
+      const z = ridge * (1 - Math.abs(y) / b);
+      const n = noise(x, y, o.seed + 41);
+      const back = y < 0;
+      put(x, y, z, Math.abs(y) < 1.5 ? '=' : (n > .6 ? '#' : ':'), hex(main, back ? .7 : .95 + n * .12));
+    }
+    // Front gable opening
+    for (let y = -b; y <= b; y++) {
+      const gz = ridge * (1 - Math.abs(y) / b);
+      for (let z = 0; z <= gz; z++) {
+        const open = Math.abs(y) < 7 && z < 16;
+        put(a, y, z, open ? '%' : '|', open ? '#101820' : hex(main, .78));
+      }
+    }
+  });
+}
+
+function isoWell(o: AssetOptions): AsciiCell[] {
+  const v = ((Math.floor(o.variant) % 3) + 3) % 3;
+  const stone = v === 1 ? '#7d5f3e' : v === 2 ? '#596957' : '#7b8285';
+  const w = 64; const h = 72; const ax = 32; const ay = 56;
+  return isoRaster(w, h, ax, ay, put => {
+    const r = 12;
+    for (let z = 0; z <= 12; z++) for (let y = -r; y <= r; y++) for (let x = -r; x <= r; x++) {
+      const d = Math.hypot(x, y);
+      if (d > r) continue;
+      if (z === 12 && d < r - 3) { put(x, y, 10, '~', '#101b24'); continue; }
+      if (d >= r - 3) put(x, y, z, z === 12 ? '=' : '#', hex(stone, .8 + (x < 0 ? .15 : -.1)));
+    }
+    for (let z = 12; z <= 34; z++) { put(-10, 0, z, '|', '#5a3f28'); put(10, 0, z, '|', '#5a3f28'); }
+    for (let y = -13; y <= 13; y++) for (let x = -14; x <= 14; x++) {
+      const z = 44 - Math.abs(y) * .85;
+      put(x, y, z, Math.abs(y) < 1.5 ? '=' : '#', hex('#6e5334', y < 0 ? .75 : 1.0));
+    }
+  });
+}
+
+function isoPropAsset(id: string, name: string, w: number, h: number, ax: number, ay: number,
+  variants: string[], footprint: { x: number; y: number; radius: number }[], gen: (o: AssetOptions) => AsciiCell[]): AsciiAsset {
+  return { id, version: 1, name, category: 'Prop', description: `Isometric ${name.toLowerCase()}.`, width: w, height: h, anchor: { x: ax, y: ay }, variants, generate: gen, footprint };
+}
+
 export const HOUSE_SPECS: Readonly<Record<string, IsoHouseSpec>> = {
-  townhouse: ({ id: 'iso-townhouse', name: 'Townhouse', a: 38, b: 24, wall: 54, rise: 26, storeys: 2,
-    plaster: '#d9c9a6', timber: '#5b3a22', stone: '#8d8679', roof: '#9a3f2c', window: '#ffd27a', door: '#6e4426' }),
-  manor: ({ id: 'iso-manor', name: 'Manor', a: 62, b: 34, wall: 78, rise: 34, storeys: 3,
-    plaster: '#c9c2b2', timber: '#4a4038', stone: '#7d7a72', roof: '#3f4d6b', window: '#ffe39a', door: '#5a3a26' }),
-  tavern: ({ id: 'iso-tavern', name: 'Tavern', a: 52, b: 30, wall: 52, rise: 30, storeys: 2,
-    plaster: '#cfa96f', timber: '#4f3220', stone: '#857563', roof: '#6c4a2b', window: '#ffc35c', door: '#7a4a24' }),
-  cottage: ({ id: 'iso-cottage', name: 'Cottage', a: 30, b: 22, wall: 28, rise: 24, storeys: 1,
-    plaster: '#e0d6ba', timber: '#6b4a2c', stone: '#8a8270', roof: '#b9913f', window: '#ffd27a', door: '#7a5230', thatch: true }),
-  hovel: ({ id: 'iso-hovel', name: 'Hovel', a: 24, b: 18, wall: 20, rise: 15, storeys: 1,
-    plaster: '#7d5d3c', timber: '#3e2a18', stone: '#5e5244', roof: '#6f5b31', window: '#d9a248', door: '#3a2616', thatch: true }),
+  townhouse: ({ id: 'iso-townhouse', name: 'Townhouse', a: 42, b: 25, wall: 64, rise: 30, storeys: 2,
+    plaster: '#d9c9a6', timber: '#5b3a22', stone: '#8d8679', roof: '#9a3f2c', window: '#ffd27a', door: '#6e4426', shiftBack: true }),
+  manor: ({ id: 'iso-manor', name: 'Manor', a: 66, b: 35, wall: 92, rise: 38, storeys: 3,
+    plaster: '#c9c2b2', timber: '#4a4038', stone: '#7d7a72', roof: '#3f4d6b', window: '#ffe39a', door: '#5a3a26', shiftBack: true }),
+  tavern: ({ id: 'iso-tavern', name: 'Tavern', a: 54, b: 30, wall: 60, rise: 32, storeys: 2,
+    plaster: '#cfa96f', timber: '#4f3220', stone: '#857563', roof: '#6c4a2b', window: '#ffc35c', door: '#7a4a24', shiftBack: true }),
+  cottage: ({ id: 'iso-cottage', name: 'Cottage', a: 34, b: 23, wall: 38, rise: 26, storeys: 1,
+    plaster: '#e0d6ba', timber: '#6b4a2c', stone: '#8a8270', roof: '#b9913f', window: '#ffd27a', door: '#7a5230', thatch: true, shiftBack: true }),
+  hovel: ({ id: 'iso-hovel', name: 'Hovel', a: 25, b: 18, wall: 28, rise: 17, storeys: 1,
+    plaster: '#7d5d3c', timber: '#3e2a18', stone: '#5e5244', roof: '#6f5b31', window: '#d9a248', door: '#3a2616', thatch: true, shiftBack: true }),
 };
 
-export const ISO_BUILDINGS: Readonly<Record<string, AsciiAsset>> = Object.fromEntries(Object.entries(HOUSE_SPECS).map(([k, s]) => [k, isoHouse(s)]));
+export const ISO_BUILDINGS: Readonly<Record<string, AsciiAsset>> = {
+  ...Object.fromEntries(Object.entries(HOUSE_SPECS).map(([k, s]) => [k, isoHouse(s)])),
+  'market-stall': isoPropAsset('iso-market-stall', 'Market stall', 84, 76, 42, 60, ['Red-white', 'Blue-white', 'Green-yellow'],
+    [{ x: -16, y: 0, radius: 11 }, { x: 0, y: 0, radius: 11 }, { x: 16, y: 0, radius: 11 }], isoMarketStall),
+  fence: isoPropAsset('iso-fence', 'Fence segment', 56, 38, 28, 28, ['Wooden', 'Wattle', 'Iron'],
+    [{ x: -18, y: 0, radius: 4 }, { x: 0, y: 0, radius: 4 }, { x: 18, y: 0, radius: 4 }], isoFence),
+  'ruin-wall': isoPropAsset('iso-ruin-wall', 'Ruin wall', 80, 72, 40, 56, ['Low', 'High', 'Arch'],
+    [{ x: -24, y: 0, radius: 7 }, { x: -14, y: 0, radius: 6 }, { x: 14, y: 0, radius: 6 }, { x: 24, y: 0, radius: 7 }], isoRuinWall),
+  tent: isoPropAsset('iso-tent', 'Ranger tent', 96, 70, 48, 52, ['Canvas', 'Hide', 'Moss'],
+    [{ x: -16, y: 0, radius: 14 }, { x: 0, y: 0, radius: 16 }, { x: 16, y: 0, radius: 14 }], isoTent),
+  well: isoPropAsset('iso-well', 'Village well', 64, 72, 32, 56, ['Stone', 'Wooden', 'Mossy'],
+    [{ x: 0, y: 0, radius: 13 }], isoWell),
+};

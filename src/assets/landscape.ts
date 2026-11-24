@@ -302,7 +302,15 @@ function classify(x: number, y: number, n: number, depth: number): number {
 
 /** Ground class at a world position (same rules the terrain uses). */
 export function groundAt(x: number, y: number, seed = 17): number {
-  return classify(x, y, noise(x, y, seed), waterDepth(x, y));
+  return classify(x, y, cellNoise(x, y, seed), waterDepth(x, y));
+}
+
+/** Integer inputs keep exact noise(x,y) parity; isometric half-step coords hash
+ *  at 2x resolution so adjacent screen cells never collide on rounded ints. */
+function cellNoise(x: number, y: number, seed: number): number {
+  return Number.isInteger(x) && Number.isInteger(y)
+    ? noise(x, y, seed)
+    : noise(Math.round(x * 2), Math.round(y * 2), seed + 193);
 }
 
 // Row cache: wind trig once per row. Column cache: wind trig once per column.
@@ -317,34 +325,40 @@ export function landscapeCell(x: number, y: number, time: number, seed: number):
     const phase = y * .07 - time * .7; rowSin = Math.sin(phase); rowCos = Math.cos(phase);
   }
   const depth = waterDepth(x, y);
-  const n = noise(x, y, seed);
+  const n = cellNoise(x, y, seed);
   const kind = classify(x, y, n, depth);
   switch (kind) {
     case GROUND.WATER: {
-      const current = Math.sin(x * .53 + Math.sin(y * .063) * 2.8 - time * .35);
-      if (n < .54) return null;
-      const foam = depth < 4 && current > .72 && n > .86;
+      const current = Math.sin(x * .42 + Math.sin(y * .063) * 2.8 - time * .35);
+      const foam = depth < 4 && current > .68 && n > .82;
       const light = depth > 24 ? 0 : depth > 10 ? 1 : 2;
-      return { x, y, glyph: foam ? ['o', '°', '*', ':'][Math.floor(n * 4) % 4] : n > .91 ? ',' : '.', color: WATER[foam ? 5 : current > .8 ? Math.min(4, light + 2) : light] };
+      if (foam) return { x, y, glyph: ['o', '°', '*', ':'][Math.floor(n * 4) % 4], color: WATER[5] };
+      if (n < .38) return { x, y, glyph: '~', color: WATER[0] };
+      return { x, y, glyph: current > .65 ? '~' : n > .88 ? ',' : n > .62 ? '-' : '.', color: WATER[current > .78 ? Math.min(4, light + 2) : light] };
     }
-    case GROUND.BANK: return { x, y, glyph: n > .88 ? 'o' : n > .68 ? ',' : n > .52 ? "'" : ' ', color: n > .5 ? '#35463b' : '#263a34' };
-    case GROUND.SAND: return { x, y, glyph: n < .5 ? ' ' : n > .93 ? 'o' : n > .76 ? ',' : '.', color: pick(SAND, n * .45 + (depth + 7) * .06) };
+    case GROUND.BANK: {
+      const lip = depth > -1.1;
+      return { x, y, glyph: lip ? (n > .45 ? '=' : ':') : n > .84 ? 'o' : n > .62 ? ',' : "'", color: lip ? '#1b2624' : n > .5 ? '#35483a' : '#263a31' };
+    }
+    case GROUND.SAND: return { x, y, glyph: n < .4 ? ' ' : n > .92 ? 'o' : n > .72 ? ',' : '.', color: pick(SAND, n * .45 + (depth + 7) * .06) };
     case GROUND.DIRT: {
-      const rut = Math.abs(roadAcross - 1.5) < .55;
-      return { x, y, glyph: rut ? ':' : n < .56 ? ' ' : n > .95 ? 'o' : n > .82 ? ',' : '.', color: pick(DIRT, rut ? .05 : n * .55 + .2) };
+      const rut = Math.abs(roadAcross - 1.4) < .48;
+      return { x, y, glyph: rut ? ':' : n < .38 ? ' ' : n > .93 ? 'o' : n > .76 ? ',' : '.', color: pick(DIRT, rut ? .08 : n * .55 + .22) };
     }
     case GROUND.COBBLE: {
-      const bx = Math.floor(x / 4 + (Math.floor(y / 3) & 1) * .5), by = Math.floor(y / 3);
-      const joint = (((x + ((by & 1) * 2)) % 4 + 4) % 4 === 0) || ((y % 3 + 3) % 3 === 0);
-      if (joint) return { x, y, glyph: n > .6 ? '.' : ' ', color: COBBLE[0] };
+      const ty = y / 4; const by = Math.floor(ty);
+      const tx = x / 5 + (by & 1) * .5; const bx = Math.floor(tx);
+      const fx = tx - bx; const fy = ty - by;
+      if (fx < .2 || fy < .25) return { x, y, glyph: n > .55 ? '.' : ' ', color: COBBLE[0] };
       const b = noise(bx, by, seed + 3);
-      return { x, y, glyph: b > .75 ? 'O' : b > .5 ? '0' : b > .25 ? 'o' : '=', color: pick(COBBLE, .25 + b * .6 + n * .1) };
+      return { x, y, glyph: b > .75 ? 'O' : b > .5 ? '0' : b > .25 ? 'o' : '=', color: pick(COBBLE, .25 + b * .55 + n * .12) };
     }
     case GROUND.FARM: {
-      const row = Math.floor(y / 3);
-      if (row & 1) return { x, y, glyph: n > .82 ? '.' : ' ', color: FURROW[Math.floor(n * 3) % 3] };
-      if (fieldCrop === 0) return { x, y, glyph: n > .7 ? '!' : n > .34 ? '|' : "'", color: pick(WHEAT, .3 + n * .7) };
-      return { x, y, glyph: n > .74 ? 'O' : n > .42 ? 'o' : ' ', color: pick(CABBAGE, .15 + n * .85) };
+      const row = Math.floor(y / 4.5);
+      const fy = y / 4.5 - row;
+      if (fy < .36) return { x, y, glyph: n > .72 ? '.' : n > .45 ? '-' : ' ', color: FURROW[Math.floor(n * 3) % 3] };
+      if (fieldCrop === 0) return { x, y, glyph: n > .68 ? '!' : n > .3 ? '|' : "'", color: pick(WHEAT, .3 + n * .7) };
+      return { x, y, glyph: n > .72 ? 'O' : n > .38 ? 'o' : ' ', color: pick(CABBAGE, .2 + n * .8) };
     }
     case GROUND.MUD: {
       const m = tint(x, y, seed + 5);

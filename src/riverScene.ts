@@ -1,5 +1,4 @@
 import { RONIN } from './assets/ronin.ts';
-import { PINE } from './assets/pine.ts';
 import { ROCK } from './assets/rock.ts';
 import { HORSE } from './assets/horse.ts';
 import { ASSET_BY_ID } from './assets/catalog.ts';
@@ -19,7 +18,7 @@ import { Atmosphere } from './game/atmosphere.ts';
 import { Weather, type Fire } from './game/weather.ts';
 import { MOVERS, moverAt } from './game/townLife.ts';
 import { Wildlife } from './game/wildlife.ts';
-import { ISO_BUILDINGS } from './assets/isoBuildings.ts';
+import { HOUSE_SPECS, ISO_BUILDINGS } from './assets/isoBuildings.ts';
 import { ISO, inputToWorld, toScreenX, toScreenY, toWorldX, toWorldY, worldBounds } from './game/view.ts';
 import './riverScene.css';
 
@@ -51,9 +50,14 @@ export function startRiverScene(): void {
   const weather = new Weather(renderer);
   const wildlife = new Wildlife(1337);
   const BURNABLE = new Set(['hovel', 'cottage', 'townhouse', 'manor', 'tavern', 'tent', 'market-stall', 'haystack', 'cart']);
+  const TREE_IDS = new Set(['pine', 'oak', 'willow', 'birch', 'cypress', 'cherry', 'dead-tree']);
+  const baseId = (id: string) => id.replace(/^iso-/, '');
   /** Fire footprint from the building's drawn size (2D sprite heights include the roof). */
-  const fireFor = (i: { id: string; x: number; y: number; scale: number; asset: AsciiAsset }): Fire =>
-    ({ id: i.id, x: i.x, y: i.y, width: i.asset.width * i.scale * .75, height: i.asset.height * i.scale * .8 });
+  const fireFor = (i: { id: string; x: number; y: number; scale: number; asset: AsciiAsset }): Fire => {
+    const spec = HOUSE_SPECS[baseId(i.asset.id)];
+    if (spec) return { id: i.id, x: i.x, y: i.y, width: (spec.a + spec.b) * i.scale * .9, height: (spec.wall + spec.rise) * i.scale * .85 };
+    return { id: i.id, x: i.x, y: i.y, width: i.asset.width * i.scale * .75, height: i.asset.height * i.scale * .8 };
+  };
   let mudgateLit = false;  const keys = new Set<string>();
   const playable = [RONIN, ...CHARACTERS];
   let playerIndex = 0;
@@ -202,7 +206,7 @@ export function startRiverScene(): void {
     if (event.code === 'KeyP' || event.code === 'Escape') setPaused(!paused);
     if (event.code === 'KeyB') {
       // Set the nearest building alight (or put it out).
-      const near = instances.filter(i => BURNABLE.has(i.asset.id)).sort((a, b) => Math.hypot(a.x - hero.x, a.y - hero.y) - Math.hypot(b.x - hero.x, b.y - hero.y))[0];
+      const near = instances.filter(i => BURNABLE.has(baseId(i.asset.id))).sort((a, b) => Math.hypot(a.x - hero.x, a.y - hero.y) - Math.hypot(b.x - hero.x, b.y - hero.y))[0];
       if (near && Math.hypot(near.x - hero.x, near.y - hero.y) < 160) weather.toggleFire(fireFor(near));
     }
     if (event.code === 'KeyV') hero.variant = (hero.variant + 1) % playable[playerIndex].variants.length;
@@ -282,10 +286,14 @@ export function startRiverScene(): void {
       instances = props.flatMap(prop => {
         const asset = ASSET_BY_ID.get(prop.assetId);
         if (!asset) { if (!missingAssets.has(prop.assetId)) { missingAssets.add(prop.assetId); console.warn(`World placement skipped: unknown asset "${prop.assetId}"`); } return []; }
-        // Isometric view swaps flat front-view buildings for real boxes with walls and roofs.
-        // Their anchor is the footprint centre, so move it back from the old front-base point.
+        // Isometric view swaps flat front-view buildings and boxy props for aligned 2.5D versions.
+        // House anchors move back from the old front-base point to the footprint centre.
         const iso = ISO ? ISO_BUILDINGS[prop.assetId] : undefined;
-        if (iso) return [{ ...prop, asset: iso, scale: 1, y: prop.y - (iso.footprint?.[0]?.radius ?? 0) }];
+        if (iso) {
+          const spec = HOUSE_SPECS[prop.assetId];
+          const scale = spec && prop.id.startsWith('town-') ? 1.18 : 1;
+          return [{ ...prop, asset: iso, scale, y: spec?.shiftBack ? prop.y - spec.b * .92 * scale : prop.y }];
+        }
         return [{ ...prop, asset }];
       });
       colliders = instances.flatMap(collidersFor);
@@ -344,7 +352,11 @@ export function startRiverScene(): void {
       if (waterDepth(step.x, step.y) > 0) continue;
       const age = time - step.born;
       const stepId = age < .65 ? footstepIds.fresh : step.direction > 0 ? footstepIds.right : footstepIds.left;
-      for (let i = -4; i <= 4; i++) plot(ids, step.x + i, step.y + Math.abs(i) * .3, stepId);
+      const sx = cellX(step.x, step.y); const sy = cellY(step.x, step.y);
+      for (let i = -3; i <= 3; i++) {
+        const px = Math.round(sx + i); const py = Math.round(sy + Math.abs(i) * .25);
+        if (px >= 0 && py >= 0 && px < cols && py < rows) ids[py * cols + px] = stepId;
+      }
       if (age < .4) plot(ids, step.x - step.direction * age * 4, step.y - age * 4, footstepIds.dust);
     }
     // Stone wakes: the current parts around the stone; foam forms at its flanks and drifts
@@ -363,15 +375,17 @@ export function startRiverScene(): void {
         const drift = Math.sin(time * (.8 + noise(seed, 4, 211)) + seed) * 1.6;
         const x = instance.x + side * (radius * .8 + travel * spread) + drift;
         const y = instance.y + radius * .3 + travel;
+        if (waterDepth(x, y) <= 0) continue;
         const fresh = travel < length * .35;
         plot(ids, x, y, wakeIds[fresh ? 0 : 1][noise(seed, cycle, 214) > .6 ? 1 : 0]);
       }
     }
     for (const ripple of ripples) {
       const age = time - ripple.born; const radius = age * 7;
+      const rx = ISO ? radius : radius * 1.6; const ry = ISO ? radius : radius * .45;
       for (let i = 0; i < 32; i++) {
         const a = i * Math.PI / 16;
-        plot(ids, ripple.x + Math.cos(a) * radius * 1.6, ripple.y + Math.sin(a) * radius * .45, wakeIds[age < .8 ? 2 : 3][i % 4 ? 2 : 0]);
+        plot(ids, ripple.x + Math.cos(a) * rx, ripple.y + Math.sin(a) * ry, wakeIds[age < .8 ? 2 : 3][i % 4 ? 2 : 0]);
       }
     }
     const draws: { y: number; draw: () => void }[] = [];
@@ -380,19 +394,31 @@ export function startRiverScene(): void {
     for (const instance of instances) {
       const height = instance.asset.height * instance.scale;
       const width = instance.asset.width * instance.scale;
+      const ax = instance.asset.anchor.x * instance.scale;
+      const ay = instance.asset.anchor.y * instance.scale;
       const ix = toScreenX(instance.x, instance.y); const iy = toScreenY(instance.x, instance.y);
-      if (ix + width < cameraX || ix - width > cameraX + cols * detailStep || iy < cameraY || iy - height > cameraY + rows * detailStep) continue;
-      if (instance.asset === PINE) visibleTrees++;
+      if (ix + (width - ax) < cameraX || ix - ax > cameraX + cols * detailStep || iy + (height - ay) < cameraY || iy - ay > cameraY + rows * detailStep) continue;
+      const isTree = TREE_IDS.has(instance.asset.id);
+      if (isTree) visibleTrees++;
+      const houseSpec = HOUSE_SPECS[baseId(instance.asset.id)];
       // Distant LOD remains deterministic; static foliage never flashes between
       // independently rounded regeneration frames.
       draws.push({ ...at(instance.x, instance.y), draw: () => {
         const flying = instance.asset.category === 'Creature';
-        if (!flying) shadow(ids, instance.x + 4, instance.y + 1, instance.asset === PINE ? 18 : 10, 3);
+        if (!flying) {
+          if (houseSpec) {
+            const sa = (houseSpec.a + houseSpec.b) * instance.scale * .85;
+            const sb = (houseSpec.a + houseSpec.b) * instance.scale * .3;
+            shadow(ids, instance.x + renderer.lighting.shadowX * 14, instance.y + renderer.lighting.shadowY * 14, sa, sb);
+          } else {
+            shadow(ids, instance.x + 3, instance.y + 1, isTree ? 18 : 10, isTree ? 4.5 : 3);
+          }
+        }
         const compiled = sprite(instance.asset, { time: flying ? time + instance.seed % 5 : 0, seed: instance.seed, variant: instance.variant, action: 'idle', facing: 'right' }, instance.scale / detailStep, flying);
-        place(ids, compiled, instance.x + (flying ? Math.sin(time * .7 + instance.seed) * 6 : 0), instance.y, flying ? LAYER.effect : LAYER.prop, !flying, flying ? -Math.cos(time * .9 + instance.seed) * 3 : 0);
+        place(ids, compiled, instance.x + (flying ? Math.sin(time * .7 + instance.seed) * 6 : 0), instance.y, flying ? LAYER.effect : LAYER.prop, !flying && !houseSpec, flying ? -Math.cos(time * .9 + instance.seed) * 3 : 0);
       } });
     }
-    seeThrough = { x: cellX(hero.x, hero.y), y: cellY(hero.x, hero.y) - (mounted ? 32 : 20) / detailStep, rx: (mounted ? 34 : 20) / detailStep, ry: (mounted ? 40 : 30) / detailStep };
+    seeThrough = { x: cellX(hero.x, hero.y), y: cellY(hero.x, hero.y) - (mounted ? 30 : 20) / detailStep, rx: (mounted ? 24 : 15) / detailStep, ry: (mounted ? 30 : 22) / detailStep };
     const actorOptions = { time, seed: 17, variant: hero.variant, action: hero.moving ? 'walk' as const : 'idle' as const, facing: hero.facing };
     draws.push({ ...at(horse.x, horse.y), draw: () => {
       shadow(ids, horse.x, horse.y, 24, 3);
@@ -429,16 +455,16 @@ export function startRiverScene(): void {
           place(ids, sprite(asset, options, mover.scale / detailStep, true), state.x, state.y, LAYER.actor);
         } });
       } else {
-        // A small horse pulls the cart; the horse walks ahead in the travel direction.
-        const ahead = state.facing === 'right' ? 34 : -34;
+        // A small horse pulls the cart; the horse walks ahead along the road vector.
+        const hx = state.x + state.dirX * 32; const hy = state.y + state.dirY * 32;
         draws.push({ ...at(state.x, state.y), draw: () => {
           shadow(ids, state.x, state.y, 20, 3);
           // Driver first, a little behind the cart, so the cart hides the legs and they read as seated.
           const driver = ASSET_BY_ID.get(mover.driver ?? 'peasant');
           if (driver) place(ids, sprite(driver, { ...options, action: 'idle', facing: state.facing }, .34 / detailStep, true), state.x + (state.facing === 'right' ? 6 : -6), state.y, LAYER.actor, false, 9);
           place(ids, sprite(asset, { ...options, action: 'idle' }, mover.scale / detailStep, true), state.x, state.y, LAYER.actor);
-          shadow(ids, state.x + ahead, state.y + 1, 16, 2.5);
-          place(ids, sprite(HORSE, { ...options, seed: 33 }, .3 / detailStep, true), state.x + ahead, state.y + 1, LAYER.actor);
+          shadow(ids, hx, hy, 16, 2.5);
+          place(ids, sprite(HORSE, { ...options, seed: 33 }, .3 / detailStep, true), hx, hy, LAYER.actor);
         } });
       }
     }
@@ -460,13 +486,14 @@ export function startRiverScene(): void {
     }
     if (night > .35) light(hero.x, hero.y, 18, 46 / detailStep, .35 * night, .3 * night, .22 * night);
     // Firelight from burning buildings.
-    for (const fl of weather.lights(time)) light(fl.x, fl.y, 0, fl.radius / detailStep, 1.15 * fl.strength, .55 * fl.strength, .2 * fl.strength);
+    for (const fl of weather.lights(time)) light(fl.x, fl.y, fl.z, fl.radius / detailStep, 1.15 * fl.strength, .55 * fl.strength, .2 * fl.strength);
     const generationEnd = performance.now();
     atmosphere.rain = 0; // replaced by particle weather
     atmosphere.render(ids, cols, rows, cameraX, cameraY, detailStep, time,
       (x, y) => [cellX(x, y), cellY(x, y)], viewWorld.y, viewWorld.y + viewWorld.h);
-    if (!paused) weather.update(dt, cameraX, cameraY, cols * detailStep, rows * detailStep);
-    weather.draw(ids, renderer.layers, cols, rows, cameraX, cameraY, detailStep);
+    if (!paused) weather.update(dt, viewWorld.x, viewWorld.y, viewWorld.w, viewWorld.h);
+    weather.draw(ids, renderer.layers, cols, rows, cameraX, cameraY, detailStep,
+      (x, y, z) => [cellX(x, y), cellY(x, y) - z / detailStep]);
     canvas.dataset.atmosMs = (performance.now() - generationEnd).toFixed(1);
     const canScroll = lastCols === cols && lastRows === rows && lastDetailStep === detailStep && Number.isFinite(lastCameraX);
     const scrollX = canScroll ? -Math.round((cameraX - lastCameraX) / detailStep) : 0;

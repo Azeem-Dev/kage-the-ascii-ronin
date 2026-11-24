@@ -1,0 +1,52 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs/promises';
+import { pathToFileURL } from 'node:url';
+const { chromium } = await import(process.argv[2] ? pathToFileURL(process.argv[2]).href : 'playwright');
+const browser = await chromium.launch({ channel: 'chrome', headless: true });
+const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
+const errors = [];
+page.on('pageerror', error => errors.push(error.message));
+await fs.mkdir('artifacts/preview', { recursive: true });
+try {
+  await page.goto('http://127.0.0.1:3000/');
+  const canvas = page.locator('#world-canvas');
+  await page.waitForFunction(() => Number(document.querySelector('canvas')?.dataset.time) > .3);
+  const initialTrees = Number(await canvas.getAttribute('data-visible-trees'));
+  await page.mouse.wheel(0, 4000);
+  await page.waitForFunction(() => document.querySelector('canvas')?.dataset.zoom === '0.25');
+  assert(Number(await canvas.getAttribute('data-visible-trees')) >= initialTrees, 'Zoom-out removes in-view trees');
+  await page.keyboard.press('KeyR');
+  await page.waitForFunction(() => document.querySelector('canvas')?.dataset.zoom === '0.80');
+  assert.equal(Number(await canvas.getAttribute('data-visible-trees')), initialTrees, 'Zoom round-trip changes trees');
+  await page.keyboard.press('KeyH');
+  await page.waitForFunction(() => document.querySelector('canvas')?.dataset.playerAsset === 'cat-girl');
+  await page.keyboard.down('KeyD');
+  await page.waitForFunction(() => Number(document.querySelector('canvas')?.dataset.footsteps) > 0);
+  await page.keyboard.up('KeyD');
+  await page.keyboard.press('KeyT');
+  await page.waitForFunction(() => document.querySelector('canvas')?.dataset.rain === '1');
+  await page.keyboard.press('KeyT');
+  await page.waitForFunction(() => document.querySelector('canvas')?.dataset.rain === '2');
+  await page.keyboard.press('KeyT');
+  await page.waitForFunction(() => document.querySelector('canvas')?.dataset.rain === '0');
+  const oldFilter = await canvas.evaluate(c => c.style.filter);
+  await page.locator('#toggle-day').click();
+  await page.waitForFunction(old => document.querySelector('canvas')?.style.filter !== old, oldFilter);
+  await page.locator('#toggle-insects').click();
+  assert((await page.locator('#toggle-insects').textContent()).includes('off'));
+  for (const [key, name, file] of [['Digit1', 'PRISM MEADOW', 'meadow'], ['Digit2', 'WILLOW ENCAMPMENT', 'camp'], ['Digit3', 'MOONVEIL CRYPT', 'crypt'], ['Digit4', 'DWARVEN FORGE', 'forge']]) {
+    await page.keyboard.press(key);
+    await page.waitForFunction(name => document.querySelector('.world-region')?.textContent?.includes(name), name);
+    await page.screenshot({ path: `artifacts/preview/final-${file}.png` });
+  }
+  await page.keyboard.press('KeyR');
+  await page.screenshot({ path: 'artifacts/preview/final-river.png' });
+  await page.keyboard.press('KeyE');
+  await page.waitForFunction(() => document.querySelector('canvas')?.dataset.mounted === 'true');
+  await page.keyboard.press('KeyE');
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.screenshot({ path: 'artifacts/preview/final-mobile.png' });
+  assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+  assert.deepEqual(errors, []);
+  console.log('PASS: stable trees across zoom, playable catfolk, moving-body/grass trail, controllable rain/insects/daylight, four named regions, mounting and mobile layout; no page errors.');
+} finally { await browser.close(); }

@@ -40,7 +40,7 @@ try {
   assert.equal(await canvas.getAttribute('data-time'), pausedTime);
   assert.equal(await canvas.evaluate(c => c.toDataURL()), pausedPixels);
   await page.keyboard.press('KeyV');
-  await page.waitForFunction(() => document.querySelector('#world-state')?.textContent?.includes('INDIGO'));
+  await page.waitForFunction(() => document.querySelector('#world-state')?.textContent?.includes('MIDNIGHT STEEL'));
   await page.keyboard.press('KeyR');
   await page.keyboard.press('KeyP');
   await page.mouse.wheel(0, -300);

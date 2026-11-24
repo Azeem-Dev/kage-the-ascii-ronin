@@ -36,7 +36,11 @@ function prop(options: AssetOptions, kind: number) {
     s.ellipse(47, 23, 10, 16, options.variant ? ['#583d55', '#a26c94', '#e7bbd3'] : ['#59452c', '#ae8b49', '#edd29a'], 1.15, '.:;*x#');
     s.line(37, 13, 57, 13, '#8f9b88', '-');
   }
-  return s.frame(options.facing === 'left');
+  const frame = s.frame(options.facing === 'left');
+  return options.variant === 0 ? frame : frame.map(cell => {
+    const r = parseInt(cell.color.slice(1, 3), 16); const g = parseInt(cell.color.slice(3, 5), 16); const b = parseInt(cell.color.slice(5, 7), 16);
+    return { ...cell, color: '#' + [r * .8, g * .9, Math.min(255, b * 1.2)].map(v => Math.round(v).toString(16).padStart(2, '0')).join('') };
+  });
 }
 
 export const PROPS: readonly AsciiAsset[] = ['Ranger tent', 'Crypt arch', 'Gravestone', 'Forge anvil', 'Road lantern'].map((name, kind) => ({

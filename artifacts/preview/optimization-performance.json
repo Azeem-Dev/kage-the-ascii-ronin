@@ -10,37 +10,47 @@
     "note": "Same headless Chrome, viewport and zoom; 60 frames before caching/dirty-cell changes."
   },
   "stationary": {
-    "fps": 60.21375884101438,
-    "p95Ms": 20.5,
-    "maxMs": 21.90000009536743,
+    "fps": 56.51580087091813,
+    "p95Ms": 20.90000009536743,
+    "maxMs": 22.90000009536743,
     "diagnostics": {
-      "generateMs": "1.8",
-      "terrainMs": "0.1",
-      "blitMs": "2.9",
-      "changedCells": "8",
+      "generateMs": "0.8",
+      "terrainMs": "0.2",
+      "blitMs": "2.2",
+      "changedCells": "73",
       "playerX": "387.77",
       "playerY": "230.00",
-      "time": "2.70",
+      "time": "2.87",
       "loadedChunks": "216",
       "zoom": "0.25",
-      "mounted": "false"
+      "mounted": "false",
+      "rain": "0",
+      "footsteps": "0",
+      "actorMoving": "false",
+      "playerAsset": "knight",
+      "visibleTrees": "58"
     }
   },
   "moving": {
-    "fps": 54.075976749653954,
-    "p95Ms": 49.799999713897705,
-    "maxMs": 53.59999990463257,
+    "fps": 56.64385178192117,
+    "p95Ms": 27,
+    "maxMs": 32.09999990463257,
     "diagnostics": {
       "generateMs": "0.8",
-      "terrainMs": "0.0",
-      "blitMs": "6.2",
-      "changedCells": "4",
-      "playerX": "436.53",
+      "terrainMs": "0.1",
+      "blitMs": "3.7",
+      "changedCells": "79",
+      "playerX": "432.85",
       "playerY": "230.00",
-      "time": "5.55",
-      "loadedChunks": "216",
+      "time": "5.56",
+      "loadedChunks": "207",
       "zoom": "0.25",
-      "mounted": "false"
+      "mounted": "false",
+      "rain": "0",
+      "footsteps": "14",
+      "actorMoving": "true",
+      "playerAsset": "knight",
+      "visibleTrees": "59"
     }
   },
   "checks": [

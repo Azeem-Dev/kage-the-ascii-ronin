@@ -24,13 +24,20 @@ export function authoredFrame(art: GlyphArt, options: AssetOptions, subject: 'kn
       if (x < art.width * .2 && y > art.height * .4) dx = Math.sin(options.time * 3 + y * .1) * (y / art.height) * 1.3;
       else if (walking && y > art.height * .59 && x < art.width * .85) {
         const leg = Math.floor(x / art.width * 5);
-        dx = Math.sin(options.time * 6 + leg * Math.PI * .8) * 3 * (y / art.height - .59);
+        dx = Math.sin(options.time * 6 + leg * Math.PI * .8) * 12 * (y / art.height - .59);
+        dy = Math.max(0, -Math.sin(options.time * 6 + leg * Math.PI * .8)) * 3 * (y / art.height - .59);
       }
     } else {
       // Cape is rooted at the shoulder; cloth motion increases toward its hem.
       if (x < art.width * .34 && y > art.height * .3) dx = Math.sin(options.time * 2 + y * .07) * (y / art.height) * 1.2;
-      else if (walking && y > art.height * .69 && x > art.width * .3 && x < art.width * .72) dx = gait * (x < art.width * .5 ? 1 : -1) * 2 * (y / art.height - .69);
-      if (walking && y < art.height * .65) dy = Math.abs(gait) * .6;
+      else if (walking && y > art.height * .65 && x > art.width * .3 && x < art.width * .72) {
+        const phase = options.time * 6 + (x < art.width * .5 ? 0 : Math.PI);
+        dx = Math.sin(phase) * 22 * (y / art.height - .65);
+        dy = -Math.max(0, Math.cos(phase)) * 10 * (y / art.height - .65);
+      } else if (walking && y > art.height * .3 && y < art.height * .62 && (x < art.width * .42 || x > art.width * .65)) {
+        dx = gait * (x < art.width * .42 ? -1 : 1) * (y / art.height - .3) * 8;
+      }
+      if (walking && y < art.height * .65) dy = Math.abs(gait) * 1.8;
     }
     const px = Math.max(0, Math.min(art.width - 1, Math.round(x + dx)));
     const py = Math.max(0, Math.min(art.height - 1, Math.round(y + dy)));

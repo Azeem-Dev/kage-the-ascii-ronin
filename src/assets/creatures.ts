@@ -49,4 +49,5 @@ export const CREATURES: readonly AsciiAsset[] = [
   { ...common, id: 'butterfly-purple', name: 'Violet butterfly', description: 'Purple veined wings with a lilac edge.', generate: o => butterfly(o, o.variant ? ['#aa90de', '#7856b1', '#d0b8ee'] : ['#7960b0', '#a385cd', '#c0a6de']) },
   { ...common, id: 'bat', name: 'Crypt bat', description: 'Jointed membrane wings, pointed ears and muted red eyes.', width: 60, height: 38, anchor: { x: 30, y: 22 }, generate: o => bird(o, true) },
   { ...common, id: 'bird', name: 'Valley raven', description: 'Tapered feathered wings and an animated flight cycle.', width: 60, height: 38, anchor: { x: 30, y: 22 }, generate: o => bird(o, false) },
+  { ...common, id: 'moth', name: 'Lantern moth', description: 'Small ivory moth with softly patterned wings.', generate: o => butterfly(o, o.variant ? ['#c5b6a1', '#e3d5bb', '#a5968a'] : ['#b1b4a3', '#dbd8bd', '#8e9c92']) },
 ];

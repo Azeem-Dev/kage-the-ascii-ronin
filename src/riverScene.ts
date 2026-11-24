@@ -3,6 +3,7 @@ import { PINE } from './assets/pine.ts';
 import { ROCK } from './assets/rock.ts';
 import { HORSE } from './assets/horse.ts';
 import { ASSET_BY_ID } from './assets/catalog.ts';
+import { CHARACTERS } from './assets/characters.ts';
 import { riverCenter, waterDepth } from './assets/landscape.ts';
 import type { AsciiAsset } from './assets/types.ts';
 import { WorldChunks } from './game/worldChunks.ts';
@@ -11,6 +12,8 @@ import { AssetRenderer } from './render/assetRenderer.ts';
 import { AssetCache, type PlacedSprite } from './render/assetCache.ts';
 import { TerrainLayer } from './render/terrainLayer.ts';
 import { CONFIG } from './config.ts';
+import { moveBody } from './engine/physics.ts';
+import { Atmosphere } from './game/atmosphere.ts';
 import './riverScene.css';
 
 interface Instance { id: string; asset: AsciiAsset; x: number; y: number; seed: number; scale: number; variant: number }
@@ -21,13 +24,16 @@ interface Ripple { x: number; y: number; born: number }
 export function startRiverScene(): void {
   document.title = 'KAGE / The whispering river';
   document.documentElement.className = 'river-view';
-  document.body.innerHTML = `<main class="river-game"><canvas id="world-canvas" aria-label="Playable ASCII river scene. Move with WASD or tap the ground."></canvas><div class="world-vignette"></div><header class="world-hud"><div><span class="world-kicker">KAGE / VISUAL FOUNDATION</span><h1>The whispering river</h1><p>Wind through the reeds. Moonlight on the current.</p></div><div class="world-region">ASHEN VALLEY<br><span id="world-state">KNIGHT · WEATHERED STEEL</span></div></header><div class="world-bottom"><div class="world-health">KAGE <span>[━━━━━━━━━━━━]</span><small id="world-location">RIVERBANK</small></div><div class="world-controls"><span>WASD</span> move <span>SHIFT</span> run <span>WHEEL</span> zoom <span>V</span> robe <span>P</span> pause <span>R</span> reset<br><small>Click / tap to walk · Reusable character, pines, stone, grass & water</small></div><span class="world-telemetry" id="world-stats"></span></div></main>`;
+  document.body.innerHTML = `<main class="river-game"><canvas id="world-canvas" aria-label="Playable ASCII river scene. Move with WASD or tap the ground."></canvas><div class="world-vignette"></div><header class="world-hud"><div><span class="world-kicker">KAGE / VISUAL FOUNDATION</span><h1>The whispering river</h1><p>Wind through the reeds. Moonlight on the current.</p></div><div class="world-region">ASHEN VALLEY<br><span id="world-state">KNIGHT · WEATHERED STEEL</span></div></header><div class="world-bottom"><div class="world-health">KAGE <span>[━━━━━━━━━━━━]</span><small id="world-location">RIVERBANK</small></div><div class="world-controls"><span>WASD</span> move <span>SHIFT</span> run <span>WHEEL</span> zoom <span>H</span> character <span>V</span> armor <span>E</span> ride <span>P</span> pause <span>R</span> reset<br><small>1 Meadow / 2 Camp / 3 Crypt / 4 Forge · Click ground to walk</small></div><span class="world-telemetry" id="world-stats"></span></div></main>`;
   const canvas = document.getElementById('world-canvas') as HTMLCanvasElement;
   const ctx = canvas.getContext('2d', { alpha: false });
   if (!ctx) throw new Error('Canvas 2D is required');
   const renderer = new AssetRenderer(4, 6);
+  const atmosphere = new Atmosphere(renderer);
   const keys = new Set<string>();
-  const hero = { x: riverCenter(230) + 69, y: 230, facing: 'right' as 'left' | 'right', moving: false, variant: 0 };
+  const playable = [RONIN, ...CHARACTERS];
+  let playerIndex = 0;
+  const hero = { x: riverCenter(230) + 69, y: 230, vx: 0, vy: 0, facing: 'right' as 'left' | 'right', moving: false, variant: 0 };
   const horse = { x: hero.x + 27, y: hero.y + 16, facing: 'right' as 'left' | 'right' };
   let mounted = false;
   let zoom = CONFIG.exploration.defaultZoom;
@@ -38,6 +44,8 @@ export function startRiverScene(): void {
   let target: { x: number; y: number } | null = null;
   let rippleTimer = 0;
   let ripples: Ripple[] = [];
+  let footsteps: { x: number; y: number; born: number; direction: number }[] = [];
+  let stepDistance = 0;
   let frames = 0; let fps = 0; let fpsTime = performance.now();
   const world = new WorldChunks();
   const assetCache = new AssetCache(renderer);
@@ -50,11 +58,26 @@ export function startRiverScene(): void {
     // Coarser distant samples bound framebuffer work at the widest zoom.
     detailStep = Math.max(1, Math.ceil(.8 / zoom));
     cols = Math.ceil(innerWidth / (4 * zoom * detailStep)); rows = Math.ceil(innerHeight / (6 * zoom * detailStep));
-    if (canvas.width !== cols * 4) canvas.width = cols * 4;
-    if (canvas.height !== rows * 6) canvas.height = rows * 6;
+    renderer.resizeGlyphs(Math.max(4, Math.round(4 * zoom * detailStep)), Math.max(6, Math.round(6 * zoom * detailStep)));
+    if (canvas.width !== cols * renderer.cellWidth) canvas.width = cols * renderer.cellWidth;
+    if (canvas.height !== rows * renderer.cellHeight) canvas.height = rows * renderer.cellHeight;
     assetCache.clear();
   }
   size();
+  const weatherPanel = document.createElement('div');
+  weatherPanel.className = 'world-weather';
+  weatherPanel.innerHTML = '<button id="toggle-rain">Rain: off [T]</button><button id="toggle-day">Day / night [N]</button><button id="toggle-insects">Insects: on [L]</button><button id="toggle-cycle">Cycle: on [C]</button>';
+  document.querySelector('.river-game')?.append(weatherPanel);
+  const toggleWeather = (code: string) => {
+    if (code === 'KeyT') atmosphere.rain = (atmosphere.rain + 1) % 3;
+    if (code === 'KeyL') atmosphere.insects = !atmosphere.insects;
+    if (code === 'KeyN') { atmosphere.daylight = atmosphere.brightness > 1.1 ? .75 : .2; atmosphere.cycle = false; }
+    if (code === 'KeyC') atmosphere.cycle = !atmosphere.cycle;
+    document.getElementById('toggle-rain')!.textContent = `Rain: ${['off', 'light', 'storm'][atmosphere.rain]} [T]`;
+    document.getElementById('toggle-insects')!.textContent = `Insects: ${atmosphere.insects ? 'on' : 'off'} [L]`;
+    document.getElementById('toggle-cycle')!.textContent = `Cycle: ${atmosphere.cycle ? 'on' : 'off'} [C]`;
+  };
+  for (const [id, code] of [['toggle-rain', 'KeyT'], ['toggle-day', 'KeyN'], ['toggle-insects', 'KeyL'], ['toggle-cycle', 'KeyC']]) document.getElementById(id)!.onclick = () => toggleWeather(code);
   const requestedArea = new URLSearchParams(location.search).get('area');
   const initialArea = LANDMARKS.find(area => area.id === requestedArea);
   if (initialArea) { hero.x = initialArea.spawnX; hero.y = initialArea.spawnY; horse.x = hero.x + 27; horse.y = hero.y + 16; }
@@ -63,15 +86,17 @@ export function startRiverScene(): void {
     if (['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(event.code)) event.preventDefault();
     keys.add(event.code);
     if (event.repeat) return;
+    toggleWeather(event.code);
     const destination = LANDMARKS.find(area => area.key === event.code);
-    if (destination) { hero.x = destination.spawnX; hero.y = destination.spawnY; horse.x = hero.x + 27; horse.y = hero.y + 16; target = null; mounted = false; }
+    if (destination) { hero.x = destination.spawnX; hero.y = destination.spawnY; hero.vx = 0; hero.vy = 0; horse.x = hero.x + 27; horse.y = hero.y + 16; target = null; mounted = false; }
     if (event.code === 'KeyP') paused = !paused;
-    if (event.code === 'KeyV') hero.variant = (hero.variant + 1) % RONIN.variants.length;
+    if (event.code === 'KeyV') hero.variant = (hero.variant + 1) % playable[playerIndex].variants.length;
+    if (event.code === 'KeyH') { playerIndex = (playerIndex + 1) % playable.length; hero.variant = 0; }
     if (event.code === 'KeyE' && !paused) {
       if (mounted) { mounted = false; hero.x = horse.x + 18; hero.y = horse.y; }
       else if (Math.hypot(hero.x - horse.x, hero.y - horse.y) < 36) { mounted = true; hero.x = horse.x; hero.y = horse.y; target = null; }
     }
-    if (event.code === 'KeyR') { hero.x = riverCenter(230) + 69; hero.y = 230; horse.x = hero.x + 27; horse.y = hero.y + 16; mounted = false; target = null; zoom = CONFIG.exploration.defaultZoom; size(); }
+    if (event.code === 'KeyR') { hero.x = riverCenter(230) + 69; hero.y = 230; hero.vx = 0; hero.vy = 0; horse.x = hero.x + 27; horse.y = hero.y + 16; mounted = false; target = null; zoom = CONFIG.exploration.defaultZoom; size(); }
     if (['Minus', 'NumpadSubtract', 'Equal', 'NumpadAdd'].includes(event.code)) {
       zoom = Math.max(CONFIG.exploration.minimumZoom, Math.min(CONFIG.exploration.maximumZoom, zoom * (event.code === 'Minus' || event.code === 'NumpadSubtract' ? .8 : 1.25))); size();
     }
@@ -110,6 +135,7 @@ export function startRiverScene(): void {
     const dt = Math.min(.05, (now - last) / 1000); last = now;
     if (!paused) {
       time += dt;
+      atmosphere.update(dt);
       let mx = Number(keys.has('KeyD') || keys.has('ArrowRight')) - Number(keys.has('KeyA') || keys.has('ArrowLeft'));
       let my = Number(keys.has('KeyS') || keys.has('ArrowDown')) - Number(keys.has('KeyW') || keys.has('ArrowUp'));
       if (mx || my) target = null;
@@ -119,16 +145,19 @@ export function startRiverScene(): void {
         else { mx = dx; my = dy; }
       }
       const length = Math.hypot(mx, my);
-      hero.moving = length > 0;
-      if (length) {
-        const running = keys.has('ShiftLeft') || keys.has('ShiftRight');
-        const speed = (mounted ? running ? CONFIG.exploration.gallopSpeed : CONFIG.exploration.rideSpeed : running ? CONFIG.exploration.runSpeed : CONFIG.exploration.walkSpeed) * (waterDepth(hero.x, hero.y) > 0 ? .55 : 1);
-        const nx = hero.x + mx / length * speed * dt;
-        const ny = hero.y + my / length * speed * dt;
-        const blocked = instances.some(instance => ['Vegetation', 'Terrain', 'Prop'].includes(instance.asset.category) && Math.hypot((nx - instance.x) / (instance.asset === PINE ? 3 : 8), (ny - instance.y) / 3) < 1);
-        if (!blocked) { hero.x = nx; hero.y = ny; }
-        if (mx) hero.facing = mx > 0 ? 'right' : 'left';
+      const running = keys.has('ShiftLeft') || keys.has('ShiftRight');
+      const speed = (mounted ? running ? CONFIG.exploration.gallopSpeed : CONFIG.exploration.rideSpeed : running ? CONFIG.exploration.runSpeed : CONFIG.exploration.walkSpeed) * (waterDepth(hero.x, hero.y) > 0 ? .55 : 1);
+      const oldX = hero.x; const oldY = hero.y;
+      const colliders = instances.filter(instance => instance.asset === PINE || instance.asset === ROCK || instance.asset.category === 'Prop').map(instance => ({ x: instance.x, y: instance.y, radius: instance.asset === PINE ? 3 : instance.asset.category === 'Prop' ? instance.asset.width * instance.scale * .12 : 6 }));
+      moveBody(hero, mx, my, speed, dt, colliders, mounted ? 4 : 2);
+      hero.moving = Math.hypot(hero.x - oldX, hero.y - oldY) > .01;
+      if (length && mx) hero.facing = mx > 0 ? 'right' : 'left';
+      stepDistance += Math.hypot(hero.x - oldX, hero.y - oldY);
+      if (stepDistance > (mounted ? 4 : 2.5)) {
+        stepDistance = 0;
+        footsteps.push({ x: hero.x, y: hero.y, born: time, direction: Math.sign(hero.vx) || 1 });
       }
+      footsteps = footsteps.filter(step => time - step.born < 1.8).slice(-32);
       if (mounted) { horse.x = hero.x; horse.y = hero.y; horse.facing = hero.facing; }
       if (hero.moving && waterDepth(hero.x, hero.y) > 0) {
         rippleTimer += dt;
@@ -142,6 +171,14 @@ export function startRiverScene(): void {
     cameraY = Math.floor((hero.y - rows * detailStep * .62) / detailStep) * detailStep;
     const ids = renderer.begin(terrain.get(cameraX, cameraY, cols, rows, detailStep, time));
     const terrainEnd = performance.now();
+    for (const step of footsteps) {
+      if (waterDepth(step.x, step.y) > 0) continue;
+      const age = time - step.born;
+      for (let i = -4; i <= 4; i++) {
+        plot(ids, step.x + i, step.y + Math.abs(i) * .3, renderer.glyph(age < .65 ? '_' : step.direction > 0 ? '/' : '\\', age < .65 ? '#7a986f' : '#3e6049'));
+      }
+      if (age < .4) plot(ids, step.x - step.direction * age * 4, step.y - age * 4, renderer.glyph('.', '#a49b78'));
+    }
     for (const instance of instances) {
       if (instance.asset !== ROCK || waterDepth(instance.x, instance.y) <= 0) continue;
       for (let i = 0; i < 18; i++) {
@@ -157,10 +194,12 @@ export function startRiverScene(): void {
       }
     }
     const draws: { y: number; draw: () => void }[] = [];
+    let visibleTrees = 0;
     for (const instance of instances) {
       const height = instance.asset.height * instance.scale;
       const width = instance.asset.width * instance.scale;
       if (instance.x + width < cameraX || instance.x - width > cameraX + cols * detailStep || instance.y < cameraY || instance.y - height > cameraY + rows * detailStep) continue;
+      if (instance.asset === PINE) visibleTrees++;
       // Distant LOD remains deterministic; static foliage never flashes between
       // independently rounded regeneration frames.
       draws.push({ y: instance.y, draw: () => {
@@ -174,15 +213,21 @@ export function startRiverScene(): void {
     draws.push({ y: horse.y, draw: () => {
       shadow(ids, horse.x, horse.y, 24, 3);
       place(ids, assetCache.get(HORSE, { ...actorOptions, seed: 31, variant: 0, action: mounted && hero.moving ? 'walk' : 'idle', facing: horse.facing }, .48 / detailStep, true), horse.x, horse.y);
-      if (mounted) place(ids, assetCache.get(RONIN, { ...actorOptions, action: 'idle' }, .25 / detailStep, true), hero.x - (hero.facing === 'right' ? 2 : -2), hero.y - 14);
+      if (mounted) place(ids, assetCache.get(playable[playerIndex], { ...actorOptions, action: 'idle' }, 29 / playable[playerIndex].height / detailStep, true), hero.x - (hero.facing === 'right' ? 2 : -2), hero.y - 14 + (hero.moving ? Math.abs(Math.sin(time * 6)) : 0));
     } });
     if (!mounted) draws.push({ y: hero.y, draw: () => {
       shadow(ids, hero.x, hero.y + 1, 10, 2);
-      place(ids, assetCache.get(RONIN, actorOptions, .35 / detailStep, true), hero.x, hero.y);
+      const asset = playable[playerIndex];
+      place(ids, assetCache.get(asset, actorOptions, (asset.id.startsWith('dwarf') ? 30 : 41) / asset.height / detailStep, true), hero.x, hero.y);
     } });
     draws.sort((a, b) => a.y - b.y).forEach(item => item.draw());
+    const daytime = atmosphere.brightness > 1.1;
+    renderer.illuminate(ids, cols, rows, (hero.x - (daytime ? 45 : 30) - cameraX) / detailStep, (hero.y - 35 - cameraY) / detailStep, (daytime ? 75 : 60) / detailStep, daytime);
+    for (const lamp of instances.filter(instance => instance.asset.id === 'lantern')) renderer.illuminate(ids, cols, rows, (lamp.x - cameraX) / detailStep, (lamp.y - 6 - cameraY) / detailStep, 23 / detailStep, true);
     const generationEnd = performance.now();
+    atmosphere.render(ids, cols, rows, cameraX, cameraY, detailStep, time);
     renderer.present(ctx, ids, cols, rows);
+    canvas.style.filter = `brightness(${atmosphere.brightness.toFixed(2)}) saturate(1.18)`;
     canvas.dataset.generateMs = (generationEnd - renderStart).toFixed(1);
     canvas.dataset.terrainMs = (terrainEnd - renderStart).toFixed(1);
     canvas.dataset.blitMs = (performance.now() - generationEnd).toFixed(1);
@@ -193,13 +238,18 @@ export function startRiverScene(): void {
       const stats = document.getElementById('world-stats'); if (stats) stats.textContent = `${world.loadedCount} CHUNKS / ${cols}×${rows} / ${fps} FPS`;
     }
     const location = document.getElementById('world-location'); if (location) location.textContent = waterDepth(hero.x, hero.y) > 0 ? 'WADING · RIVER CURRENT' : 'RIVERBANK · WIND MEADOW';
-    const state = document.getElementById('world-state'); if (state) state.textContent = `${paused ? 'PAUSED' : 'KNIGHT'} · ${RONIN.variants[hero.variant].toUpperCase()}`;
+    const state = document.getElementById('world-state'); if (state) state.textContent = `${paused ? 'PAUSED' : playable[playerIndex].name.toUpperCase()} · ${playable[playerIndex].variants[hero.variant].toUpperCase()}`;
     const region = document.querySelector('.world-region'); if (region?.firstChild) region.firstChild.textContent = regionAt(hero.x, hero.y).toUpperCase();
     // Read-only diagnostics used by browser smoke tests and future tooling.
     canvas.dataset.playerX = hero.x.toFixed(2); canvas.dataset.playerY = hero.y.toFixed(2); canvas.dataset.time = time.toFixed(2);
     canvas.dataset.loadedChunks = String(world.loadedCount);
     canvas.dataset.zoom = zoom.toFixed(2);
     canvas.dataset.mounted = String(mounted);
+    canvas.dataset.rain = String(atmosphere.rain);
+    canvas.dataset.footsteps = String(footsteps.length);
+    canvas.dataset.actorMoving = String(hero.moving);
+    canvas.dataset.playerAsset = playable[playerIndex].id;
+    canvas.dataset.visibleTrees = String(visibleTrees);
     requestAnimationFrame(tick);
   }
   requestAnimationFrame(tick);

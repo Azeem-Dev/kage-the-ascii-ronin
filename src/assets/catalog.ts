@@ -6,6 +6,8 @@ import { CHARACTERS } from './characters.ts';
 import { CREATURES } from './creatures.ts';
 import { EQUIPMENT } from './equipment.ts';
 import { PROPS } from './props.ts';
+import { FLORA } from './flora.ts';
+import { TOWER } from './tower.ts';
 import { noise, type AsciiAsset, type AsciiCell, type AssetOptions } from './types.ts';
 
 function grass(o: AssetOptions): AsciiCell[] {
@@ -52,6 +54,8 @@ export const ASSETS: readonly AsciiAsset[] = [
   ...CREATURES,
   ...EQUIPMENT,
   ...PROPS,
+  ...FLORA,
+  TOWER,
   { id: 'grass', version: 1, name: 'Wind meadow', category: 'Vegetation', description: 'Reusable patch with stable seeded distribution and a travelling wind field.', width: 80, height: 42, anchor: { x: 40, y: 38 }, variants: ['Meadow', 'Blue grass', 'Dry grass'], generate: grass },
   { id: 'water', version: 1, name: 'Quiet water', category: 'Terrain', description: 'Layered wave bands and an expanding wake, rendered entirely as glyph cells.', width: 80, height: 42, anchor: { x: 40, y: 38 }, variants: ['River', 'Jade pond', 'Night pool'], generate: water },
 ];

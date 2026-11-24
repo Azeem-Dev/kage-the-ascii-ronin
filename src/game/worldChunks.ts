@@ -1,6 +1,6 @@
 import { noise } from '../assets/types.ts';
 import { riverCenter, waterDepth } from '../assets/landscape.ts';
-import { LANDMARK_PROPS } from './landmarks.ts';
+import { LANDMARK_PROPS, LANDMARKS } from './landmarks.ts';
 
 export interface WorldProp {
   id: string;
@@ -31,6 +31,7 @@ export function generateChunk(cx: number, cy: number): WorldChunk {
     const y = cy * CHUNK_SIZE + 14 + noise(cx, cy * 5 + i, 331) * 67;
     let x = cx * CHUNK_SIZE + 12 + noise(cx * 3 + i, cy, 109) * 72;
     const assetId = i < 2 ? 'pine' : 'rock';
+    if (assetId === 'pine' && (noise(cx * 3 + i, cy, 601) < .72 || LANDMARKS.some(region => Math.hypot(x - region.x, y - region.y) < 150))) continue;
     if (assetId === 'rock' && riverCenter(y) >= cx * CHUNK_SIZE && riverCenter(y) < (cx + 1) * CHUNK_SIZE) x = riverCenter(y) + (noise(cx, cy, 57) - .5) * 30;
     // Keep the authored starting clearing intact; its surroundings are generated.
     if (x >= 145 && x <= 530 && y >= 100 && y <= 400) continue;

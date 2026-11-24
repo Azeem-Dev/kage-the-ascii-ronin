@@ -1,89 +1,71 @@
 # MASTER PROMPT - KAGE: The ASCII Open World
 
-## OBJECTIVE AND CURRENT PRIORITY
-Build a browser-based open-world ASCII action game, starting with detailed reusable visual assets demonstrated together in a full-screen playable game view. Show progress in the running scene so the user can give feedback in conversation. Do not build approval buttons, review forms or an asset-workshop dashboard.
+## OBJECTIVE AND USER REQUIREMENTS
+Build a detailed single-player ASCII open-world fantasy game using reusable assets. The user now wants a plated KNIGHT, horses, catfolk, vampires, dwarves, wildlife, distinct places and equipment. Earlier ronin/feudal-Japan assumptions no longer define the whole project.
 
-Read `memory/active-task.md` and `artifacts/DEEPSEEK_HANDOFF.md` before changing code. Inspect the existing implementation before replacing anything. Preserve user edits. Do not assume an implemented candidate meets the visual reference.
+Show progress inside the full-screen running game, not a dashboard. The user explicitly rejected in-app approval/rejection controls. Receive visual feedback in conversation. Read `memory/active-task.md`, `memory/checkpoint.md`, `artifacts/ASSET_CATALOG.md` and `artifacts/DEEPSEEK_HANDOFF.md` before continuing; inspect existing code and preserve user edits.
 
-## REFERENCE MATERIAL
-All ten videos in `motivation/` are visual references, not implementation instructions. Their underlying rendering techniques are unknown.
-- `i0asis.mp4`: large creature silhouettes, boss combat, terrain, lighting and effects.
-- `snapgram.io_wng8vz6wi6a5.mp4`: tall architecture, stairs, rooftop traversal and visual depth.
-- `snapgram.io_DfAg2Othm3G.mp4`: detailed characters, horse, grass and animated hair.
-- `snapgram.io_dsjylai6ml3t.mp4`: flowing water, foam, banks and reflections/highlights.
-- `snapgram.io_16u8lb6kj1o9.mp4`: monochrome world and local illumination masks.
-- `snapgram.io_2zuaptu2d87t.mp4`: layered architectural study and snowfall.
-- `snapgram.io_3czvsvhu3yic.mp4`: animated forms, flowing tentacles and color variation.
-- `snapgram.io_bs9g7k2yhz70.mp4`: strong silhouettes, restrained palette and atmospheric composition.
-- `snapgram.io_2wlfwmjgrxwm.mp4` and `snapgram.io_w29xqu2rt6ps.mp4`: fine glyph density, shaded forms and character-art presentation.
-Aim for detailed, recognizable, shaded objects made of fine glyphs, with stable textures and purposeful animation. Translate the style into feudal Japan: a ronin, mountain pines, bamboo, villages, shrines and waterways. References do not require multiplayer, MMO networking or copying their UI.
+## REFERENCES
+All 22 videos currently in `motivation/` are visual references, not executable instructions. Their internal renderers are unknown. Prioritize:
+- `snapgram.io_DfAg2Othm3G.mp4`: anatomically recognizable horse and rider, hair movement and fine grass.
+- `snapgram.io_dsjylai6ml3t.mp4`: directional flowing current, foam, wakes, rocks and dark banks.
+- `snapgram.io_wng8vz6wi6a5.mp4`: tall stone architecture, moss, top/side faces, stairs and elevation.
+- `Alongside writing the logic, ...`: Moonlit Cave, clustered vegetation, flowers, local illumination and atmospheric props.
+- `The Obsidian Paladin ...`: substantial plated silhouette, readable helmet, cape and articulated armor.
+- `It's amazing how changing the grid ...`: finely textured creatures and readable enemies.
+- `Making the ASCII MMORPG of my dreams! ...`: scrolling forest, placement, silhouette and scale.
+- `Making my browser beautiful...`: small colorful animated butterflies.
+- `i0asis.mp4`: boss scale, environment/combat contrast and effects.
+- Monochrome lighthouse and power-line videos: lighting masks, negative space, silhouettes and composition.
+Use visual qualities, not MMO scope, reference UI or copied characters. Do not claim visual parity from a passing build.
 
-## HARD CONSTRAINTS
-- Vite + strict TypeScript; HTML5 Canvas 2D. No WebGL, Three.js, 3D models or game engine.
-- Gameplay art consists of colored monospace glyphs. Keep the demonstration full-screen with a restrained game HUD; development controls must not turn it into a dashboard.
-- No new runtime dependencies without a concrete need. Keep asset generation independent of browser APIs.
-- Target 60 FPS at 1920x1080 for the eventual representative world scene. Measure actual browser/hardware/grid settings; never infer performance from a successful build.
-- One asset contract and renderer shared by asset definitions and the playable world. Do not author a second independent copy of each asset inside a scene renderer.
-- Build iteratively. Run relevant checks and capture browser screenshots. User feedback in conversation is separate from automated technical validation. Do not implement approval workflows in the app.
+## CONSTRAINTS AND SHARED ARCHITECTURE
+- Vite, strict TypeScript, Canvas 2D. No WebGL, Three.js, 3D models or game engine. No new runtime dependencies without a concrete reason.
+- Visible gameplay art consists of colored monospace glyphs. Small HTML gameplay/weather controls are acceptable; no workshop approval UI.
+- One reusable asset contract: ID/version, bounds, contact anchor, variants and deterministic frame generation from seed/time/action/facing. Missing cells are transparent. World placement and collision are separate data.
+- Authored art and procedural art share the same glyph-cell format. Source PNGs in `artifacts/source-art/` are offline authoring references. The browser imports baked JSON glyph/color data, not those PNGs. Rebuild with `python scripts/bake_ascii_art.py` (Pillow).
+- `src/assets/catalog.ts` is the registry. Add content there and place instances through `src/game/landmarks.ts` or deterministic `worldChunks.ts`; do not duplicate drawing logic in scenes.
+- Keep physical size and anchors consistent across zoom/direction. Rasterize glyphs at the current display size; do not enlarge a tiny cached bitmap indefinitely.
+- Static trees must remain present at every zoom. Do not randomly hide instances to improve FPS.
+- Align coarse terrain sampling to world coordinates. Keep static texture stable; animation must not reseed or flicker the whole ground field.
+- Cache static terrain and minified prop sprites. Keep static and animated caches separate, bounded and independent of the number of visited chunks. The shared renderer uses typed glyph IDs, cached tiles and dirty-cell uploads.
+- Target 60 FPS at representative 1920x1080 settings. Measure idle and moving cases and frame-time spikes. Record viewport, browser and zoom; headless local tests are not proof for every laptop.
+- Preserve the old experiment at `?mode=game` during migration. Default `/` is the current open-world foundation.
 
-## REUSABLE ASSET ARCHITECTURE
-An asset definition has a stable ID, version, category, local cell bounds, ground/contact anchor, variants and a frame generator. Generator inputs include time, deterministic seed, variant, direction and action. Output cells specify local x/y, one glyph and a color. Missing cells are transparent.
+## CURRENT IMPLEMENTATION
+33 asset definitions: plated knight, grey horse, pines/rocks, six catfolk/vampire/dwarf characters, blue/pink/purple butterflies, bats/birds/moths, five swords, tents/crypt/graves/anvil/lantern, four flower clumps, grass/water and a ruined tower. Knight has four armor palettes. H cycles playable characters; V cycles their variants.
 
-Support two forms through this common contract:
-1. Authored frames/layers for characters, equipment, buildings and distinctive props.
-2. Deterministic procedural generators for vegetation, ground cover, water, weather and flexible details.
+The connected terrain has deterministic load/unload chunks and four authored landmarks: Prism Meadow, Willow Encampment, Moonveil Crypt and Dwarven Forge. Character movement has acceleration, friction, circle contacts, substeps, ground/prop collision, mounted movement and water slowdown. Body/cloth animation is a limited 2D deformation of authored glyph art, not a full skeletal rig. Grass bends and recovers behind footsteps.
 
-World placement is an instance containing an asset ID, position, elevation, seed, variant and animation state. Keep collision footprints and gameplay behavior separate from visual cell data. Never bake camera coordinates or scene placement into reusable definitions. Missing symbols, invalid bounds and malformed palettes should fail visibly during development.
+Water has downstream advected foam trails, rock wakes and player ripples. This is an analytic visual current, not a fluid solver. Rain has off/light/storm settings; moths/fireflies, a day/night cycle and local warm/cool glyph lighting are present. Persistent gameplay, enemy AI and actual combat are not implemented. HUD health is decorative. Swords are reusable display assets, not a completed equipment/inventory system. The tower is visual; its upper floor is not traversable yet.
 
-Cache rasterized glyphs and reuse them when composing frames. The scene renderer caches glyph pixels and composites one CPU framebuffer for upload. Transparent cells are omitted; later instances overwrite earlier cells in depth order. Do not silently fall back to spaces. Match font metrics and cell aspect ratio; avoid stretching the final canvas to arbitrary viewport proportions. Keep world scale consistent across assets and display densities.
+## CONTROLS AND REVIEW
+WASD/arrows move; Shift runs/gallops; click/tap sets a destination. E mounts/dismounts the nearby horse. Wheel or +/- zooms from 0.25 to 5; R resets. H changes playable character; V changes armor/palette. P pauses. T cycles rain, N toggles day/night, L toggles light insects, C toggles the automatic day/night cycle. On-screen weather buttons support pointer input.
+1 = meadow, 2 = camp, 3 = crypt, 4 = forge. These are development travel shortcuts, not a completed fast-travel system. Direct area URLs such as `/?area=crypt` work. Capture the actual game scene at normal, wide and close zoom for feedback. No automatic visual approval.
 
-Directly authored/generated glyphs are the primary asset path. The old scene-buffer/Sobel/material conversion modules remain legacy experiments; they are optional future tools for specific needs, not a mandatory parallel render pass. Do not spend each normal game frame rendering the hidden legacy scene.
+## PHASES
+### Phase 1 - Reusable visual foundation and playable exploration (IMPLEMENTED BASELINE; polish continues)
+Maintain the common contract, catalog, baked/procedural glyph assets and full-screen demonstration. Show the knight/horse and expanded library in a coherent environment, with readable silhouettes, body/cloth motion, flowers, clustered grass, river flow, weather and warm/cool lighting. Keep zoom stable and interactive.
+Acceptance: deterministic generation, valid bounds/anchors/colors, genuine variant differences, applicable animation changes, stable static terrain, the same tree instances across zoom, playable movement/wading/mounting, browser controls, screenshots and measured performance. `npm test` covers generators and cache/physics invariants; `npm run build` checks strict TypeScript and bundling. Visual quality remains subject to the user's feedback.
 
-Use stable seeded texture anchored to assets/world surfaces. Separate static detail from animated layers. Avoid random flicker, identical filled ellipses for every tree, and one uniform character across large surfaces. Lighting should eventually affect glyph color/density coherently while preserving silhouettes.
+### Phase 2 - Asset quality, animation and equipment
+Refine the knight, horse and NPC anatomy/poses against references. Replace approximate deformation with authored multi-frame or articulated clips for idle, walk/run, riding, turns and attacks. Separate weapons, hands and armor pieces so swords can actually be equipped without a second baked blade. Add equipment slots, stats and attachment points; refine flowers, trees, winged creatures and material-specific shading. Keep the library versioned and reusable.
+Acceptance: planted feet, clear limb changes, stable anchors, no detached limbs/cape artifacts at close zoom, readable silhouettes at distant zoom, visually distinct weapons and armor, and equipment changes visible on the player. No extra approval dashboard.
 
-## PRESENTATION AND FEEDBACK
-- Open `/` for the full-screen playable river demonstration. The old scene remains at `?mode=game` for comparison.
-- Show the assets as part of the environment, as in the reference videos. No dashboard, cards, approve/reject buttons, review storage or review export.
-- Controls: WASD/arrows move, Shift runs, mouse wheel zooms, V switches robe variant, P pauses animation/movement, R resets position/zoom, click/tap walks toward a point.
-- Screenshot the actual game scene for discussion. The user gives feedback in conversation, and the developer refines the asset definitions.
-- Make the running scene visually substantial: shaded character form, layered clothing, hair motion, dense coherent grass, dark cut banks, water highlights/wakes, depth-sorted rocks and trees.
-- Keep this a reusable asset foundation: character, pine, rock and landscape definitions are independent modules. Scene instances set position, scale, seed and variant.
+### Phase 3 - Authored world structure and elevation
+Improve composition and local identity: cave, watchtower, camp, crypt and forge layouts with paths, cliff sides, stairs, rooftops and readable boundaries. Move collision footprints into map/asset metadata. Add an explicit shared elevation/surface model, proper stair connections and occlusion around high structures. Add editable/saveable map data while retaining deterministic terrain.
+Acceptance: drawing and traversal share geometry; upper/lower actors occlude correctly; stairs genuinely connect walkable heights; map data round-trips without moving props; flowers/grass are nonblocking; doors and arches have usable openings. The existing visual tower is not evidence of completed traversal.
 
-## BUILD PHASES
-### Phase 1 - Reusable ASCII assets in a playable scene (CURRENT)
-Build the shared asset contract, deterministic procedural/shape authoring and cached glyph renderer. Demonstrate a shaded ronin, mountain pines, stones, dense animated grass and a flowing river together in a full-screen walkable scene. Add robe variants, hair/cloth motion, actor movement, zoom, pause and wakes while wading. Keep generators reusable outside this scene.
-Acceptance: assets render without runtime errors; seeds repeat exactly; variants differ; applicable animations change over time; generated cells stay in bounds; character silhouette/feet remain readable; camera movement preserves world-anchored texture; depth sorting allows walking behind props; river movement creates wakes; desktop/mobile controls work. Run `npm test`, `npm run build`, and browser movement/pause/zoom checks; save game screenshots. Report actual performance and visual limitations. User feedback happens in conversation, not through app UI. Do not claim reference-level quality from tests alone.
+### Phase 4 - Durable open-world systems
+Build on existing streaming: persistent modified chunks, region transitions/biomes, save/load, interactions, NPC schedules, horse state and sensible travel. Add field-based grass interaction and richer river response without uncontrolled allocations or global redraws. Expand daytime/nighttime behavior and local light sources.
+Acceptance: long-distance travel and returning restore state; bounded caches and chunk counts; stable seeds/placements across chunk boundaries; no visible texture reseeding; predictable collision and movement; profile a populated world while moving and changing zoom/weather.
 
-### Phase 2 - Refined reusable asset library
-Refine Phase 1 candidates against the reference videos and user feedback. Add authored character animation clips (idle, multi-frame walk and facing directions), layered equipment/cloth, several tree silhouettes, grass/flower variants, rocks, soil/path patches, bamboo and a lantern. Add building modules: foundation, wall, roof, stair, fence and torii. Expand the catalog incrementally and show new candidates directly in the running scene. Do not add review import/export or approval controls.
-Acceptance: the user has reviewed the starter assets in conversation; each has a stable anchor, documented scale and version; animation contact points remain stable; silhouettes work at gameplay size; no unknown glyphs or scene-specific placement in asset definitions. Validate layering and transparent cutouts.
+### Phase 5 - Enemy AI, combat, quests and progression
+Turn vampire/bat enemy assets into actual data-driven agents with detection, windups, attacks, damage and death. Add light/heavy sword actions, stamina, dodge/parry, hit-stop, glyph slash/spark/blood effects, equipment stats and a larger boss. Add friendly dialogue, quests, loot, progression and recovery. Keep attacks elevation-aware and telegraphs legible in dense scenery.
+Acceptance: behavior-focused tests for damage/timings/posture or stamina; responsive browser combat; no attacks through blocked/disconnected heights; quests and progression survive saves/region changes. Do not present static hostile NPC placement as enemy AI.
 
-### Phase 3 - World composition and map data
-Create a small composition sandbox using the refined catalog. Store asset instances and terrain data separately from rendering. Add a shared camera/projection, placement selection, save/load map JSON, consistent scale, collision footprints and depth-aware occlusion. Include a raised gatehouse with stone foundations, stairs, foliage and one ronin as an architectural benchmark.
-Acceptance: the same definitions can be instantiated in different maps; multiple instances share definitions while keeping independent seeds/state; save/load preserves placement; actors can move behind/in front of props; elevation and stairs align with visible surfaces. Test data round trips and collision boundaries. Do not use unrelated hardcoded coordinate copies for drawing and traversal.
+### Phase 6 - Presentation, accessibility and release
+Add menus, real HUD state, audio, gamepad support, persistent settings, accessibility options and performance/detail presets that preserve physical proportions. Profile before optimizing. Verify a complete exploration/combat/save/reload loop, supported viewport sizes, repeated zoom transitions and particle/weather extremes. Build static `dist`, report remaining visual/performance gaps, and do not deploy externally without authorization.
 
-### Phase 4 - Open-world exploration foundation
-Expand the sandbox into connected village, bamboo forest and mountain shrine regions. Add chunked world data, load/unload around the camera, stable coordinates/seeds across chunk boundaries, smooth camera follow and player movement, elevation-aware collision/traversal, interactions and persistent world changes. Add restrained rain, fog, lantern light and water animation through reusable systems.
-Acceptance: cross chunk boundaries without seams, regenerated texture or lost state; returning to an area restores changes; offscreen work is culled; memory does not grow without bound; movement and occlusion remain coherent around stairs/buildings. Profile a representative populated region against the frame budget.
-
-### Phase 5 - Combat, inhabitants and progression
-Implement stamina, dash with invulnerability frames, light combo, heavy slash, a tight parry window and charged iaijutsu. Use reusable character animation/effect definitions for slash trails, sparks, blood, hit-stop and screen shake. Add data-driven spearman, swordsman, archer and kitsune behavior, readable telegraphs, enemy posture, stealth and a multi-phase Oni boss. Add NPC interaction, short dialogue, basic quests and persistent progression across connected regions.
-Acceptance: test combat timings, damage/posture, stamina and death/recovery; prevent attacks across disconnected elevations; telegraphs stay legible in dense scenery; state survives region changes; confirm feel in the browser. Keep the focus on a playable single-player open world.
-
-### Phase 6 - Presentation, polish and release validation
-Add title/pause/death/settings screens, glyph HUD, synthesized or replaceable audio, gamepad support and settings persistence. Tune font metrics, material shading, local lighting, weather, accessibility and performance. Profile generation, culling, glyph caching and upload costs before optimizing. Add detail/density settings without changing physical proportions.
-Acceptance: build outputs a static deployable `dist`; verify a full exploration/combat/save/reload flow; measure sustained FPS at the actual target settings; report remaining limitations and reference mismatches. Show game screenshots and summarize the latest user feedback. Do not deploy externally without authorization.
-
-## CODE ORGANIZATION AND HANDOFF
-- `src/assets/`: reusable contracts, authored definitions and procedural generators.
-- `src/render/assetRenderer.ts`: shared cell-to-canvas renderer.
-- `src/riverScene.ts` and `src/riverScene.css`: full-screen playable asset demonstration.
-- `src/assets/landscape.ts`: continuous world-anchored meadow and river sampling.
-- `src/engine/`: loop, input, camera, audio and later streaming infrastructure.
-- `src/game/` and later `src/data/`: gameplay, world instances and region data.
-- `tests/`: deterministic generator checks and playable-scene browser checks.
-- `artifacts/preview/`: current game screenshots; `artifacts/DEEPSEEK_HANDOFF.md`: continuation details.
-
-Strict TypeScript, no `any`. Keep shared engine settings in configuration, asset-specific palettes/geometry with their definitions, and gameplay tunables in data. Preserve existing work; migrate legacy code only as replacements are verified. Keep both master prompt files identical, maintain active-task/checkpoint notes, and distinguish tests passed, visual checks performed, user feedback and remaining work.
-
-Continue Phase 1 from the existing implementation. Show the user the running scene and gather feedback before expanding to Phase 2. Do not recreate the removed workshop/approval UI. Do not restart scaffolding or treat later phases as already authorized for immediate implementation.
+## CONTINUATION RULES
+Keep both master prompts identical. Update task/checkpoint/handoff notes with exact evidence, current user feedback, rejected approaches and remaining work. Do not restart scaffolding, restore the removed workshop, hide trees for FPS, or claim fluid simulation/full physics/full game completion. Use the smallest relevant checks, then broader browser/build validation warranted by the change.

@@ -6,14 +6,22 @@
   "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/157.0.0.0 Safari/537.36",
   "logicalCores": 8,
   "frames": 120,
-  "averageFps": 31.608060055314105,
-  "p95FrameMs": 39.700000286102295,
+  "averageFps": 57.645193824041684,
+  "p95FrameMs": 19.59999990463257,
   "diagnostics": {
-    "generateMs": "19.1",
-    "terrainMs": "12.5",
-    "blitMs": "10.0",
+    "generateMs": "2.1",
+    "terrainMs": "0.1",
+    "blitMs": "2.4",
+    "changedCells": "180",
     "playerX": "387.77",
     "playerY": "230.00",
-    "time": "4.54"
+    "time": "2.53",
+    "loadedChunks": "35",
+    "zoom": "0.80",
+    "mounted": "false",
+    "rain": "0",
+    "footsteps": "0",
+    "actorMoving": "false",
+    "playerAsset": "knight"
   }
 }

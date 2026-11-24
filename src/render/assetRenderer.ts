@@ -385,6 +385,20 @@ export class AssetRenderer {
     }
   }
 
+  /** GPU path: compute lit per-cell colours without painting pixels (see gpuPresenter.ts). */
+  prepare(ids: Uint32Array, cols: number, rows: number): void {
+    if (this.layers.length !== ids.length) { this.layers = new Uint8Array(ids.length); this.under = new Uint32Array(ids.length); this.shadow = new Uint8Array(ids.length); this.outline = new Uint8Array(ids.length); }
+    const shadeStart = performance.now();
+    this.shade(ids, cols, rows);
+    this.shadeMs = performance.now() - shadeStart;
+    this.putStart = performance.now();
+  }
+  /** Packed per-cell colours from the last shade: fg = mask<<15 | rgb555, bg = rgb555. */
+  get foreground(): Uint32Array { return this.fg; }
+  get background(): Uint16Array { return this.bg; }
+  /** Glyph characters by mask index (index 0 is blank). */
+  get glyphList(): readonly string[] { return this.glyphChars; }
+
   present(ctx: CanvasRenderingContext2D, ids: Uint32Array, cols: number, rows: number, scrollX = 0, scrollY = 0): void {
     const width = cols * this.cellWidth; const height = rows * this.cellHeight;
     // A hidden or zero-size window (e.g. during startup) has nothing to present.

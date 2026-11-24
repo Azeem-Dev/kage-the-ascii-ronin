@@ -11,6 +11,7 @@ import { LANDMARKS, regionAt } from './game/landmarks.ts';
 import { AssetRenderer, LAYER } from './render/assetRenderer.ts';
 import { AssetCache, type PlacedSprite } from './render/assetCache.ts';
 import { TerrainLayer } from './render/terrainLayer.ts';
+import { GpuPresenter } from './render/gpuPresenter.ts';
 import { CONFIG } from './config.ts';
 import { moveBody, type Collider } from './engine/physics.ts';
 import { collidersFor } from './game/colliders.ts';
@@ -30,6 +31,17 @@ export function startRiverScene(): void {
   const ctx = canvas.getContext('2d', { alpha: false });
   if (!ctx) throw new Error('Canvas 2D is required');
   const renderer = new AssetRenderer(4, 6);
+  // GPU drawing (Three.js) with bloom; ?gpu=0 or a missing WebGL falls back to the CPU blit.
+  // The 2D canvas stays on top, invisible, so clicks, wheel and test datasets keep working.
+  let gpu: GpuPresenter | null = null;
+  if (new URLSearchParams(location.search).get('gpu') !== '0') {
+    try {
+      gpu = new GpuPresenter();
+      gpu.canvas.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;image-rendering:pixelated;pointer-events:none';
+      canvas.before(gpu.canvas);
+      canvas.style.position = 'relative'; canvas.style.opacity = '0';
+    } catch (error) { console.warn('WebGL unavailable, using CPU renderer', error); gpu = null; }
+  }
   const atmosphere = new Atmosphere(renderer);
   const keys = new Set<string>();
   const playable = [RONIN, ...CHARACTERS];
@@ -349,7 +361,8 @@ export function startRiverScene(): void {
     const canScroll = lastCols === cols && lastRows === rows && lastDetailStep === detailStep && Number.isFinite(lastCameraX);
     const scrollX = canScroll ? -Math.round((cameraX - lastCameraX) / detailStep) : 0;
     const scrollY = canScroll ? -Math.round((cameraY - lastCameraY) / detailStep) : 0;
-    renderer.present(ctx, ids, cols, rows, scrollX, scrollY);
+    if (gpu) { renderer.prepare(ids, cols, rows); gpu.present(renderer, cols, rows); }
+    else renderer.present(ctx, ids, cols, rows, scrollX, scrollY);
     lastCameraX = cameraX; lastCameraY = cameraY;
     lastCols = cols; lastRows = rows; lastDetailStep = detailStep;
     if (lastFilter) { lastFilter = ''; canvas.style.filter = ''; }

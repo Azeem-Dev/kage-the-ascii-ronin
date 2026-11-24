@@ -14,6 +14,17 @@ try {
   const canvas = page.locator('#world-canvas');
   await page.waitForFunction(() => Number(document.querySelector('#world-canvas')?.dataset.time) > .4);
   assert.equal(await page.getByRole('button', { name: /approve/i }).count(), 0);
+  const performanceSample = await page.evaluate(async () => {
+    const intervals = [];
+    let last = performance.now();
+    for (let i = 0; i < 120; i++) {
+      await new Promise(resolve => requestAnimationFrame(resolve));
+      const now = performance.now(); intervals.push(now - last); last = now;
+    }
+    intervals.sort((a, b) => a - b);
+    return { viewport: [innerWidth, innerHeight], userAgent: navigator.userAgent, logicalCores: navigator.hardwareConcurrency, frames: intervals.length, averageFps: 1000 / (intervals.reduce((a, b) => a + b, 0) / intervals.length), p95FrameMs: intervals[Math.floor(intervals.length * .95)], diagnostics: { ...document.querySelector('#world-canvas').dataset } };
+  });
+  await fs.writeFile('artifacts/preview/performance.json', JSON.stringify(performanceSample, null, 2));
   await page.screenshot({ path: 'artifacts/preview/river-scene.png' });
   const x = Number(await canvas.getAttribute('data-player-x'));
   await page.keyboard.down('KeyA');

@@ -38,4 +38,10 @@ for (const asset of ASSETS) {
 }
 assert.throws(() => validateFrame(ASSETS[0], [{ x: -1, y: 0, glyph: 'x', color: '#ffffff' }]));
 assert.throws(() => validateFrame(ASSETS[0], [{ x: 0, y: 0, glyph: 'xx', color: '#ffffff' }]));
-console.log(`PASS: ${ASSETS.length} assets, ${frames} deterministic animated frames, bounds, variants, seeds and invalid data rejection.`);
+const { landscapeCell, riverCenter, waterDepth } = await import(load(path.join(root, 'src/assets/landscape.ts')));
+assert(waterDepth(riverCenter(230), 230) > 0);
+assert(waterDepth(riverCenter(230) + 100, 230) < 0);
+const sample = landscapeCell(400, 230, 1, 17);
+landscapeCell(-15, 200, 4, 999);
+assert.deepEqual(landscapeCell(400, 230, 1, 17), sample, 'Landscape cache changes deterministic data');
+console.log(`PASS: ${ASSETS.length} assets, ${frames} valid deterministic frames, animated asset variation, bounds, variants, seeds, river semantics and invalid data rejection.`);

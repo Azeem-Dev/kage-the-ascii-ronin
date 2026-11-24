@@ -1,12 +1,12 @@
 import type { AsciiCell } from '../assets/types.ts';
 
-/** Shared native-glyph renderer for the workshop and future world instances.
+/** Shared native-glyph renderer for reusable world instances.
  * Glyphs are cached individually; animation changes placement, never rasterizes
  * the whole asset. Preview zoom enlarges the same cells used at gameplay size.
  */
 export class AssetRenderer {
   private cache = new Map<string, HTMLCanvasElement>();
-  private pixelCache = new Map<string, Uint32Array>();
+  private pixelCache = new Map<string, Map<string, Uint32Array>>();
   private output: ImageData | null = null;
   constructor(readonly cellWidth = 7, readonly cellHeight = 10) {}
 
@@ -44,8 +44,9 @@ export class AssetRenderer {
     for (const cell of cells) {
       const x = Math.round(cell.x); const y = Math.round(cell.y);
       if (x < 0 || y < 0 || x >= cols || y >= rows) continue;
-      const key = `${cell.glyph}:${cell.color}`;
-      let glyph = this.pixelCache.get(key);
+      let colorCache = this.pixelCache.get(cell.color);
+      if (!colorCache) { colorCache = new Map(); this.pixelCache.set(cell.color, colorCache); }
+      let glyph = colorCache.get(cell.glyph);
       if (!glyph) {
         const tile = document.createElement('canvas'); tile.width = this.cellWidth; tile.height = this.cellHeight;
         const g = tile.getContext('2d', { willReadFrequently: true });
@@ -54,14 +55,17 @@ export class AssetRenderer {
         g.font = `${this.cellHeight}px "Courier New", monospace`; g.textAlign = 'center';
         g.fillStyle = cell.color; g.fillText(cell.glyph, this.cellWidth / 2, this.cellHeight * .82);
         glyph = new Uint32Array(g.getImageData(0, 0, tile.width, tile.height).data.buffer);
-        this.pixelCache.set(key, glyph);
+        colorCache.set(cell.glyph, glyph);
       }
       const dx = x * this.cellWidth;
       const dy = y * this.cellHeight;
       for (let row = 0; row < this.cellHeight; row++) {
         const start = (dy + row) * width + dx;
         const source = row * this.cellWidth;
-        for (let col = 0; col < this.cellWidth; col++) pixels[start + col] = glyph[source + col];
+        if (this.cellWidth === 4) {
+          pixels[start] = glyph[source]; pixels[start + 1] = glyph[source + 1];
+          pixels[start + 2] = glyph[source + 2]; pixels[start + 3] = glyph[source + 3];
+        } else for (let col = 0; col < this.cellWidth; col++) pixels[start + col] = glyph[source + col];
       }
     }
     ctx.putImageData(this.output, 0, 0);

@@ -11,9 +11,29 @@ export function waterDepth(x: number, y: number): number { return riverWidth(y) 
 const GRASS = ['#182a28', '#213c33', '#2c4c3d', '#3d6350', '#557b60', '#779176'];
 const WATER = ['#101d27', '#1b303c', '#2d4854', '#456470', '#6e8990', '#b2c3bd'];
 
+interface Tile { n: number; depth: number; cluster: number }
+const tileRows = new Map<string, Map<number, Tile>>();
+let lastRow: Map<number, Tile> | undefined;
+let lastY = NaN;
+let lastSeed = NaN;
+let tileCount = 0;
+
 export function landscapeCell(x: number, y: number, time: number, seed: number): AsciiCell | null {
-  const n = noise(x, y, seed);
-  const depth = waterDepth(x, y);
+  if (y !== lastY || seed !== lastSeed || !lastRow) {
+    const key = `${y},${seed}`;
+    lastRow = tileRows.get(key);
+    if (!lastRow) { lastRow = new Map(); tileRows.set(key, lastRow); }
+    lastY = y; lastSeed = seed;
+  }
+  let tile = lastRow.get(x);
+  if (!tile) {
+    // Bounded cache for the demonstration. A chunk-owned cache replaces this
+    // when streaming is introduced; eviction never changes deterministic data.
+    if (tileCount >= 100000) { tileRows.clear(); tileCount = 0; tileRows.set(`${y},${seed}`, lastRow); }
+    tile = { n: noise(x, y, seed), depth: waterDepth(x, y), cluster: noise(Math.floor(x / 7), Math.floor(y / 5), seed) };
+    lastRow.set(x, tile); tileCount++;
+  }
+  const { n, depth, cluster } = tile;
   if (depth > 0) {
     const flow = Math.sin(x * .2 + y * .17 - time * 1.7) * .45 + Math.sin(y * .3 - time * 2.3 + Math.sin(x * .12)) * .35;
     const streak = Math.sin(x * .7 + Math.sin(y * .1 - time) * 1.7);
@@ -27,7 +47,6 @@ export function landscapeCell(x: number, y: number, time: number, seed: number):
     if (n < .38) return null;
     return { x, y, glyph: n > .8 ? '/' : '|', color: depth > -3 ? '#18272b' : '#243d35' };
   }
-  const cluster = noise(Math.floor(x / 7), Math.floor(y / 5), seed);
   if (n < .17 + cluster * .13) return null;
   const wind = Math.sin(x * .055 + y * .07 - time * 1.6) + Math.sin(y * .025 + x * .09 + time * .6) * .4;
   const glyph = n > .987 ? '*' : n < .32 ? ',' : wind > .3 ? '/' : wind < -.3 ? '\\' : '|';

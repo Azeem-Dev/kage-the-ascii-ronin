@@ -1,0 +1,19 @@
+{
+  "viewport": [
+    1440,
+    1000
+  ],
+  "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/157.0.0.0 Safari/537.36",
+  "logicalCores": 8,
+  "frames": 120,
+  "averageFps": 31.608060055314105,
+  "p95FrameMs": 39.700000286102295,
+  "diagnostics": {
+    "generateMs": "19.1",
+    "terrainMs": "12.5",
+    "blitMs": "10.0",
+    "playerX": "387.77",
+    "playerY": "230.00",
+    "time": "4.54"
+  }
+}

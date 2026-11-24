@@ -94,10 +94,10 @@ export class AsciiPass {
     const stepX = sceneWidth / cols;
     const stepY = sceneHeight / rows;
 
-    // 1. Extract raw image data from scene canvas (lit) and geometry canvas (unlit)
+    // 1. Extract raw image data from scene canvas (lit), geometry canvas (unlit), and material canvas
     const litData = sceneBuffer.ctx.getImageData(0, 0, sceneWidth, sceneHeight).data;
     const geomData = sceneBuffer.geometryCtx.getImageData(0, 0, sceneWidth, sceneHeight).data;
-    const matBuffer = sceneBuffer.materials;
+    const matData = sceneBuffer.materialCtx.getImageData(0, 0, sceneWidth, sceneHeight).data;
 
     // 2. Downsample buffer into grid cells
     for (let cy = 0; cy < rows; cy++) {
@@ -126,12 +126,8 @@ export class AsciiPass {
         const gb = (geomData[i00 + 2] + geomData[i10 + 2] + geomData[i01 + 2] + geomData[i11 + 2]) >> 2;
         const geomLum = (gr * 77 + gg * 150 + gb * 29) >> 8;
 
-        // Sample material ID
-        const m00 = matBuffer[py0 * sceneWidth + px0];
-        const m10 = matBuffer[py0 * sceneWidth + px1];
-        const m01 = matBuffer[py1 * sceneWidth + px0];
-        const m11 = matBuffer[py1 * sceneWidth + px1];
-        const mat = m00 || m10 || m01 || m11 || Material.NONE;
+        // Sample material ID from hardware-rasterized red channel
+        const mat = matData[i00] || matData[i10] || matData[i01] || matData[i11] || Material.NONE;
 
         const cellIdx = cellRowOffset + cx;
         this.cellR[cellIdx] = r;

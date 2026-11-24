@@ -1,7 +1,7 @@
 // ============================================================================
 // Scene Buffer & Material ID Buffer
-// Provides separate Geometry & Light canvases for accurate 3D top-down rendering.
-// Material marking uses exact rasterized geometry (no bounding box bleeds).
+// Stage 1 of the rendering pipeline: Hidden low-res 2D drawing target.
+// Uses Canvas2D hardware rasterization for materials (zero CPU raycasting).
 // ============================================================================
 
 import { CONFIG } from '../config.ts';
@@ -26,8 +26,9 @@ export class SceneBuffer {
   public lightCanvas: HTMLCanvasElement;
   public lightCtx: CanvasRenderingContext2D;
 
-  // Material ID typed buffer (1 byte per scene buffer pixel)
-  public materials: Uint8Array;
+  // Material rasterization canvas (stores material ID in red channel)
+  public materialCanvas: HTMLCanvasElement;
+  public materialCtx: CanvasRenderingContext2D;
 
   // Debug visual canvas for F2 material view
   public debugMaterialCanvas: HTMLCanvasElement;
@@ -68,8 +69,14 @@ export class SceneBuffer {
     this.lightCtx = lightCtx;
     this.lightCtx.imageSmoothingEnabled = false;
 
-    // 4. Material buffer
-    this.materials = new Uint8Array(this.width * this.height);
+    // 4. Material Rasterization Canvas (hardware accelerated)
+    this.materialCanvas = document.createElement('canvas');
+    this.materialCanvas.width = this.width;
+    this.materialCanvas.height = this.height;
+    const matCtx = this.materialCanvas.getContext('2d', { willReadFrequently: true });
+    if (!matCtx) throw new Error('Failed to get 2D context for MaterialCanvas');
+    this.materialCtx = matCtx;
+    this.materialCtx.imageSmoothingEnabled = false;
 
     // 5. Debug Material Canvas
     this.debugMaterialCanvas = document.createElement('canvas');
@@ -99,7 +106,9 @@ export class SceneBuffer {
     this.lightCanvas.height = this.height;
     this.lightCtx.imageSmoothingEnabled = false;
 
-    this.materials = new Uint8Array(this.width * this.height);
+    this.materialCanvas.width = this.width;
+    this.materialCanvas.height = this.height;
+    this.materialCtx.imageSmoothingEnabled = false;
 
     this.debugMaterialCanvas.width = this.width;
     this.debugMaterialCanvas.height = this.height;
@@ -108,9 +117,8 @@ export class SceneBuffer {
 
   /**
    * Reset buffers at the beginning of each frame
-   * Uses balanced ambient moonlight so the world is visible while lanterns pop warmly
    */
-  public clear(ambientGroundColor = '#0b1612', ambientLightColor = '#24344d'): void {
+  public clear(ambientGroundColor = '#0b1612', ambientLightColor = '#223249'): void {
     // Clear geometry canvas with base ground color
     this.geometryCtx.fillStyle = ambientGroundColor;
     this.geometryCtx.fillRect(0, 0, this.width, this.height);
@@ -119,78 +127,9 @@ export class SceneBuffer {
     this.lightCtx.fillStyle = ambientLightColor;
     this.lightCtx.fillRect(0, 0, this.width, this.height);
 
-    // Default material is GRASS for the ground plane
-    this.materials.fill(Material.GRASS);
-  }
-
-  /**
-   * Mark an exact rectangular region with a material ID
-   */
-  public markMaterialRect(x: number, y: number, w: number, h: number, material: Material): void {
-    const x0 = Math.max(0, Math.floor(x));
-    const y0 = Math.max(0, Math.floor(y));
-    const x1 = Math.min(this.width, Math.ceil(x + w));
-    const y1 = Math.min(this.height, Math.ceil(y + h));
-
-    for (let py = y0; py < y1; py++) {
-      const rowOffset = py * this.width;
-      for (let px = x0; px < x1; px++) {
-        this.materials[rowOffset + px] = material;
-      }
-    }
-  }
-
-  /**
-   * Mark an exact circular region with a material ID (rasterized)
-   */
-  public markMaterialCircle(cx: number, cy: number, radius: number, material: Material): void {
-    const r2 = radius * radius;
-    const x0 = Math.max(0, Math.floor(cx - radius));
-    const y0 = Math.max(0, Math.floor(cy - radius));
-    const x1 = Math.min(this.width, Math.ceil(cx + radius));
-    const y1 = Math.min(this.height, Math.ceil(cy + radius));
-
-    for (let py = y0; py < y1; py++) {
-      const dy = py - cy;
-      const dy2 = dy * dy;
-      const rowOffset = py * this.width;
-      for (let px = x0; px < x1; px++) {
-        const dx = px - cx;
-        if (dx * dx + dy2 <= r2) {
-          this.materials[rowOffset + px] = material;
-        }
-      }
-    }
-  }
-
-  /**
-   * Mark an exact elliptical region with a material ID (rasterized)
-   */
-  public markMaterialEllipse(
-    cx: number,
-    cy: number,
-    rx: number,
-    ry: number,
-    material: Material
-  ): void {
-    const x0 = Math.max(0, Math.floor(cx - rx));
-    const y0 = Math.max(0, Math.floor(cy - ry));
-    const x1 = Math.min(this.width, Math.ceil(cx + rx));
-    const y1 = Math.min(this.height, Math.ceil(cy + ry));
-    const rx2 = rx * rx;
-    const ry2 = ry * ry;
-
-    for (let py = y0; py < y1; py++) {
-      const dy = py - cy;
-      const dyNorm = (dy * dy) / ry2;
-      const rowOffset = py * this.width;
-      for (let px = x0; px < x1; px++) {
-        const dx = px - cx;
-        if ((dx * dx) / rx2 + dyNorm <= 1.0) {
-          this.materials[rowOffset + px] = material;
-        }
-      }
-    }
+    // Clear material canvas to GRASS material
+    this.materialCtx.fillStyle = `rgb(${Material.GRASS}, 0, 0)`;
+    this.materialCtx.fillRect(0, 0, this.width, this.height);
   }
 
   /**
@@ -206,8 +145,10 @@ export class SceneBuffer {
   ): void {
     this.geometryCtx.fillStyle = color;
     this.geometryCtx.fillRect(x, y, w, h);
+
     if (material !== Material.NONE) {
-      this.markMaterialRect(x, y, w, h, material);
+      this.materialCtx.fillStyle = `rgb(${material}, 0, 0)`;
+      this.materialCtx.fillRect(x, y, w, h);
     }
   }
 
@@ -227,7 +168,10 @@ export class SceneBuffer {
     this.geometryCtx.fill();
 
     if (material !== Material.NONE) {
-      this.markMaterialCircle(cx, cy, radius, material);
+      this.materialCtx.fillStyle = `rgb(${material}, 0, 0)`;
+      this.materialCtx.beginPath();
+      this.materialCtx.arc(cx, cy, radius, 0, Math.PI * 2);
+      this.materialCtx.fill();
     }
   }
 
@@ -248,12 +192,15 @@ export class SceneBuffer {
     this.geometryCtx.fill();
 
     if (material !== Material.NONE) {
-      this.markMaterialEllipse(cx, cy, rx, ry, material);
+      this.materialCtx.fillStyle = `rgb(${material}, 0, 0)`;
+      this.materialCtx.beginPath();
+      this.materialCtx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
+      this.materialCtx.fill();
     }
   }
 
   /**
-   * Draw filled polygon on geometry canvas and mark material
+   * Draw filled polygon on geometry canvas and mark material (Hardware rasterized)
    */
   public drawPolygon(
     points: { x: number; y: number }[],
@@ -262,6 +209,7 @@ export class SceneBuffer {
   ): void {
     if (points.length < 3) return;
 
+    // Draw on geometry canvas
     this.geometryCtx.fillStyle = color;
     this.geometryCtx.beginPath();
     this.geometryCtx.moveTo(points[0].x, points[0].y);
@@ -271,40 +219,16 @@ export class SceneBuffer {
     this.geometryCtx.closePath();
     this.geometryCtx.fill();
 
+    // Hardware rasterize on material canvas
     if (material !== Material.NONE) {
-      let minX = this.width;
-      let maxX = 0;
-      let minY = this.height;
-      let maxY = 0;
-      for (const p of points) {
-        if (p.x < minX) minX = p.x;
-        if (p.x > maxX) maxX = p.x;
-        if (p.y < minY) minY = p.y;
-        if (p.y > maxY) maxY = p.y;
+      this.materialCtx.fillStyle = `rgb(${material}, 0, 0)`;
+      this.materialCtx.beginPath();
+      this.materialCtx.moveTo(points[0].x, points[0].y);
+      for (let i = 1; i < points.length; i++) {
+        this.materialCtx.lineTo(points[i].x, points[i].y);
       }
-      const x0 = Math.max(0, Math.floor(minX));
-      const y0 = Math.max(0, Math.floor(minY));
-      const x1 = Math.min(this.width, Math.ceil(maxX));
-      const y1 = Math.min(this.height, Math.ceil(maxY));
-
-      for (let py = y0; py < y1; py++) {
-        const rowOffset = py * this.width;
-        for (let px = x0; px < x1; px++) {
-          let inside = false;
-          for (let i = 0, j = points.length - 1; i < points.length; j = i++) {
-            const xi = points[i].x;
-            const yi = points[i].y;
-            const xj = points[j].x;
-            const yj = points[j].y;
-            const intersect =
-              yi > py !== yj > py && px < ((xj - xi) * (py - yi)) / (yj - yi) + xi;
-            if (intersect) inside = !inside;
-          }
-          if (inside) {
-            this.materials[rowOffset + px] = material;
-          }
-        }
-      }
+      this.materialCtx.closePath();
+      this.materialCtx.fill();
     }
   }
 
@@ -313,7 +237,7 @@ export class SceneBuffer {
    */
   public drawGroundShadow(
     points: { x: number; y: number }[],
-    opacity = 0.5
+    opacity = 0.55
   ): void {
     if (points.length < 3) return;
     this.geometryCtx.save();
@@ -377,6 +301,8 @@ export class SceneBuffer {
    * Generates debug visualization of the material buffer (for F2 toggle)
    */
   public updateDebugMaterialView(): void {
+    const matImg = this.materialCtx.getImageData(0, 0, this.width, this.height);
+    const matPixels = matImg.data;
     const data = this.debugImageData.data;
     const total = this.width * this.height;
 
@@ -391,9 +317,9 @@ export class SceneBuffer {
     }
 
     for (let i = 0; i < total; i++) {
-      const mat = this.materials[i];
-      const rgb = colorCache[mat] || [0, 0, 0];
       const p = i * 4;
+      const mat = matPixels[p]; // Read material ID from red channel
+      const rgb = colorCache[mat] || [0, 0, 0];
       data[p] = rgb[0];
       data[p + 1] = rgb[1];
       data[p + 2] = rgb[2];

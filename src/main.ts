@@ -140,10 +140,16 @@ function bootstrap(): void {
 
   // 5. Game Loop
   let accumulatedTime = 0;
+  let logTimer = 0;
 
   const loop = new GameLoop({
     update: (dt: number) => {
       accumulatedTime += dt;
+      logTimer += dt;
+      if (logTimer >= 1.0) {
+        console.log(`[PERF] FPS: ${loop.stats.fps} | Render: ${loop.stats.renderTimeMs.toFixed(2)}ms | Frame: ${loop.stats.frameTimeMs.toFixed(2)}ms`);
+        logTimer = 0;
+      }
       input.endFrame();
     },
     render: (_interpolation: number) => {

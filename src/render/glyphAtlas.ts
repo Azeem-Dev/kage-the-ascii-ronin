@@ -71,6 +71,7 @@ export class GlyphAtlas {
   public glyphList: string[];
   public glyphMap: Map<string, number>;
   public count: number;
+  private pixelBuffer: Uint32Array | null = null;
 
   constructor(cellWidth = CONFIG.display.cellWidth, cellHeight = CONFIG.display.cellHeight) {
     this.cellWidth = cellWidth;
@@ -104,9 +105,13 @@ export class GlyphAtlas {
       }
     }
 
-    // Add common UI & debug characters
-    const commonChars = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz!?:;,.-_+*#=/\\|()[]{}<>~`\'"^$@%&';
-    for (const char of commonChars) {
+    // Add all alphanumeric, punctuation, code tokens, and box characters
+    const fullGlyphSet =
+      '0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ' +
+      '!?:;,.-_+*#=/\\|()[]{}<>~`\'"^$@%&' +
+      '─═│║┌┐└┘├┤┬┴┼░▒▓█' +
+      '·°•✿';
+    for (const char of fullGlyphSet) {
       glyphSet.add(char);
     }
 
@@ -164,6 +169,41 @@ export class GlyphAtlas {
           ctx.fillStyle = color.css;
           ctx.fillText(char, x + cw / 2, y + ch / 2 + 1);
         }
+      }
+    }
+  }
+
+  private getPixelBuffer(): Uint32Array {
+    if (!this.pixelBuffer) {
+      const image = this.ctx.getImageData(0, 0, this.canvas.width, this.canvas.height);
+      this.pixelBuffer = new Uint32Array(image.data.buffer);
+    }
+    return this.pixelBuffer;
+  }
+
+  /**
+   * Copy a glyph cell into a CPU-side output buffer. This avoids tens of
+   * thousands of drawImage calls per frame; the finished frame is uploaded
+   * with one putImageData call instead.
+   */
+  public blitToPixelBuffer(
+    output: Uint32Array,
+    outputWidth: number,
+    glyphIndex: number,
+    colorIndex: number,
+    dx: number,
+    dy: number
+  ): void {
+    const source = this.getPixelBuffer();
+    const sourceStride = this.canvas.width;
+    const sourceStart = colorIndex * this.cellHeight * sourceStride + glyphIndex * this.cellWidth;
+    const destinationStart = dy * outputWidth + dx;
+
+    for (let row = 0; row < this.cellHeight; row++) {
+      let src = sourceStart + row * sourceStride;
+      let dst = destinationStart + row * outputWidth;
+      for (let col = 0; col < this.cellWidth; col++) {
+        output[dst++] = source[src++];
       }
     }
   }

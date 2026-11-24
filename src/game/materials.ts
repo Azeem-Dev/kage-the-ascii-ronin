@@ -1,6 +1,7 @@
 // ============================================================================
 // Material Override System
-// Defines material codes and their ASCII glyph sets & debug colors
+// Defines materials with luminance-ordered glyph sets for rich 3D shading
+// (from deepest shadow to specular highlight), matching high-detail ASCII ARPGs.
 // ============================================================================
 
 export enum Material {
@@ -18,13 +19,9 @@ export enum Material {
   MOON = 11,
   LANTERN = 12,
   TORII = 13,
+  CLIFF = 14,
 }
 
-/**
- * Surface orientation stored in the material buffer's green channel.
- * The ASCII pass uses this to keep wood grain, stone courses and roof tiles
- * aligned with the projected face instead of the screen grid.
- */
 export enum Surface {
   FLAT = 0,
   VERTICAL = 1,
@@ -36,7 +33,7 @@ export enum Surface {
 
 export interface MaterialDef {
   name: string;
-  glyphs: string[];
+  glyphs: string[]; // Ordered from dark/sparse to bright/dense
   debugColor: string;
   useEdgeOverride: boolean;
 }
@@ -50,79 +47,85 @@ export const MATERIAL_DEFS: Record<Material, MaterialDef> = {
   },
   [Material.GRASS]: {
     name: 'Grass',
-    glyphs: ["'", ',', '.', ' '],
+    glyphs: [' ', ' ', '.', ',', "'", '"'],
     debugColor: '#1d8348',
     useEdgeOverride: true,
   },
   [Material.WOOD]: {
     name: 'Wood',
-    glyphs: ['═', '≡', '║', '▓', '▒', '░'],
+    glyphs: [' ', '░', '▒', '▓', '═', '║'],
     debugColor: '#873600',
     useEdgeOverride: true,
   },
   [Material.STONE]: {
     name: 'Stone',
-    glyphs: ['.', ':', ';', 'o', '▓', '▒', '░'],
+    glyphs: [' ', '░', '▒', '▓', '█', '.', ':'],
     debugColor: '#7f8c8d',
+    useEdgeOverride: true,
+  },
+  [Material.CLIFF]: {
+    name: 'Cliff / High Ground',
+    glyphs: [' ', '░', '▒', '▓', '█', 'x', '#'],
+    debugColor: '#566573',
     useEdgeOverride: true,
   },
   [Material.WATER]: {
     name: 'Water',
-    glyphs: ['~', '≈', '-', ' '],
+    glyphs: [' ', ' ', '~', '≈', '-', '='],
     debugColor: '#2980b9',
     useEdgeOverride: false,
   },
   [Material.BLOOD]: {
     name: 'Blood',
-    glyphs: ['▓', '▒', '░', '*'],
+    glyphs: [' ', '░', '▒', '▓', '█', '*'],
     debugColor: '#c0392b',
     useEdgeOverride: false,
   },
   [Material.FIRE]: {
     name: 'Fire',
-    glyphs: ['^', '*', "'", '!'],
+    glyphs: ['.', ':', '*', '^', '!', 'o', 'O', '#', '@'],
     debugColor: '#e67e22',
     useEdgeOverride: false,
   },
   [Material.CLOTH]: {
     name: 'Cloth',
-    glyphs: ['~', '-', '=', '#'],
+    glyphs: [' ', '░', '▒', '▓', '█'],
     debugColor: '#8e44ad',
     useEdgeOverride: true,
   },
   [Material.FOLIAGE]: {
     name: 'Foliage',
-    glyphs: ['&', '%', '*', '#'],
+    glyphs: [' ', '░', '▒', '▓', '█', '%', '&'],
     debugColor: '#27ae60',
     useEdgeOverride: false,
   },
   [Material.ROOF_TILES]: {
     name: 'Roof Tiles',
-    glyphs: ['▓', '▒', '░', '█', '/', '\\'],
+    glyphs: [' ', '░', '▒', '▓', '/', '\\', '═'],
     debugColor: '#2c3e50',
     useEdgeOverride: true,
   },
   [Material.SHOJI]: {
     name: 'Shoji',
-    glyphs: ['+', '|', '-', '#', '▒', '░'],
+    glyphs: [' ', '░', '▒', '▓', '+', '|', '─'],
     debugColor: '#f1c40f',
     useEdgeOverride: true,
   },
   [Material.MOON]: {
     name: 'Moon',
-    glyphs: ['O', 'o', '*', '@'],
+    glyphs: ['*', 'o', 'O', '@', '█'],
     debugColor: '#fdfefe',
     useEdgeOverride: false,
   },
   [Material.LANTERN]: {
     name: 'Lantern',
-    glyphs: ['#', '*', 'O', 'o'],
+    glyphs: ['*', 'O', '#', '@', '█'],
     debugColor: '#e74c3c',
     useEdgeOverride: false,
   },
   [Material.TORII]: {
     name: 'Torii',
-    glyphs: ['║', '═', '╦', '#', '▓', '▒'],
+    glyphs: [' ', '░', '▒', '▓', '║', '═'],
     debugColor: '#922b21',
     useEdgeOverride: true,
   },

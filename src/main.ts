@@ -9,6 +9,7 @@ import { InputManager } from './engine/input.ts';
 import { GlyphAtlas } from './render/glyphAtlas.ts';
 import { SceneBuffer } from './render/sceneBuffer.ts';
 import { AsciiPass } from './render/asciiPass.ts';
+import { AsciiSceneRenderer } from './render/asciiScene.ts';
 import { TestScene } from './game/testScene.ts';
 import { DebugOverlay } from './ui/debugOverlay.ts';
 
@@ -51,6 +52,7 @@ function bootstrap(): void {
   // 2. Initialize Scene Buffer & ASCII Pass
   const sceneBuffer = new SceneBuffer(cols, rows, CONFIG.render.bufferScale);
   const asciiPass = new AsciiPass(cols, rows, atlas);
+  const asciiScene = new AsciiSceneRenderer(cols, rows, atlas);
 
   // 3. Initialize Game Scene & Debug Overlay
   const testScene = new TestScene();
@@ -70,6 +72,7 @@ function bootstrap(): void {
 
     sceneBuffer.resize(cols, rows);
     asciiPass.resize(cols, rows);
+    asciiScene.resize(cols, rows);
   };
 
   // Support URL search params for automated testing and debug view captures
@@ -168,6 +171,21 @@ function bootstrap(): void {
         console.log(`[PERF] FPS: ${loop.stats.fps} | Render: ${loop.stats.renderTimeMs.toFixed(2)}ms | Frame: ${loop.stats.frameTimeMs.toFixed(2)}ms`);
         logTimer = 0;
       }
+
+      // Update player movement from WASD or arrow keys
+      let moveX = 0;
+      let moveY = 0;
+      if (input.isKeyDown('KeyW') || input.isKeyDown('ArrowUp')) moveY -= 1;
+      if (input.isKeyDown('KeyS') || input.isKeyDown('ArrowDown')) moveY += 1;
+      if (input.isKeyDown('KeyA') || input.isKeyDown('ArrowLeft')) moveX -= 1;
+      if (input.isKeyDown('KeyD') || input.isKeyDown('ArrowRight')) moveX += 1;
+
+      if (moveX !== 0 && moveY !== 0) {
+        moveX *= 0.7071;
+        moveY *= 0.7071;
+      }
+
+      testScene.update(dt, moveX, moveY);
       input.endFrame();
     },
     render: (_interpolation: number) => {
@@ -183,12 +201,16 @@ function bootstrap(): void {
         sceneBuffer.updateDebugMaterialView();
         ctx.drawImage(sceneBuffer.debugMaterialCanvas, 0, 0, canvas.width, canvas.height);
       } else {
-        // Visible View: Two-stage ASCII rendering pass
-        asciiPass.render(sceneBuffer, ctx, accumulatedTime);
-        asciiPass.renderAtmosphere(ctx, accumulatedTime);
+        // Visible View: Direct character-grid renderer. The hidden scene
+        // buffer remains available for F1/F2 debugging, but final gameplay
+        // art is authored as readable ASCII rather than pixel noise.
+        asciiScene.render(ctx, testScene.player, accumulatedTime, testScene.getZoom(), testScene.lanternOn);
       }
 
-      // Step C: Render telemetry HUD
+      // Step C: Render in-game floating text & action hotbar
+      testScene.renderUI(ctx, asciiPass, cols, rows, canvas.width, canvas.height);
+
+      // Step D: Render telemetry HUD
       debugOverlay.render(ctx, loop.stats, cols, rows, canvas.width, canvas.height);
     },
   }, CONFIG.display.targetFps);

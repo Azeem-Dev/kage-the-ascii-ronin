@@ -1,8 +1,8 @@
 // ============================================================================
-// ASCII Pass — Stage 2 of the Rendering Pipeline
-// Samples scene & material buffer, performs Sobel edge detection on geometry,
-// applies material overrides, and blits pre-rendered glyphs from the atlas.
-// Geometry-driven Sobel prevents artificial concentric rings around lights.
+// ASCII Pass — Code-Matrix Luminance Engine
+// Recreates the high-density alphanumeric code matrix aesthetic from the
+// reference video ("Making the ASCII MMORPG of my dreams").
+// Shaded by 3D lighting, cliff contours, material properties, and directional edges.
 // ============================================================================
 
 import { CONFIG } from '../config.ts';
@@ -16,13 +16,15 @@ export class AsciiPass {
   public atlas: GlyphAtlas;
 
   // Working typed buffers
-  private cellGeomLum: Uint8Array; // Physical geometry luminance for Sobel
-  private cellLitLum: Uint8Array;  // Final lit luminance for density ramps
+  private cellGeomLum: Uint8Array;
+  private cellLitLum: Uint8Array;
   private cellR: Uint8Array;
   private cellG: Uint8Array;
   private cellB: Uint8Array;
   private cellMat: Uint8Array;
   private cellSurface: Uint8Array;
+  private outputImageData: ImageData | null = null;
+  private outputPixels: Uint32Array = new Uint32Array(0);
 
   // Cached directional glyph IDs
   private glyphHoriz: number;
@@ -32,9 +34,6 @@ export class AsciiPass {
 
   // Cached material glyph IDs (material -> number[])
   private materialGlyphIds: Record<number, number[]>;
-
-  // Cached ramp glyph IDs for all available ramps
-  private rampGlyphIds: number[][];
 
   constructor(cols: number, rows: number, atlas: GlyphAtlas) {
     this.cols = cols;
@@ -62,11 +61,6 @@ export class AsciiPass {
       const matId = Number(matIdStr);
       this.materialGlyphIds[matId] = def.glyphs.map((g) => atlas.getGlyphIndex(g));
     }
-
-    // Pre-cache ramp glyph indices
-    this.rampGlyphIds = CONFIG.render.ramps.map((ramp) =>
-      Array.from(ramp.chars).map((ch) => atlas.getGlyphIndex(ch))
-    );
   }
 
   public resize(cols: number, rows: number): void {
@@ -102,9 +96,8 @@ export class AsciiPass {
     const geomData = sceneBuffer.geometryCtx.getImageData(0, 0, sceneWidth, sceneHeight).data;
     const matData = sceneBuffer.materialCtx.getImageData(0, 0, sceneWidth, sceneHeight).data;
 
-    // 2. Downsample each complete scene-buffer region into one character cell.
-    // Averaging the whole region (rather than two arbitrary pixels) preserves
-    // broad faces and stops fine geometry from turning into aliased noise.
+    // 2. Downsample complete buffer regions. Broad stone and foliage faces
+    // survive averaging while thin silhouette edges remain available to Sobel.
     for (let cy = 0; cy < rows; cy++) {
       const cellRowOffset = cy * cols;
       const py0 = Math.floor(cy * stepY);
@@ -113,7 +106,6 @@ export class AsciiPass {
       for (let cx = 0; cx < cols; cx++) {
         const px0 = Math.floor(cx * stepX);
         const px1 = Math.max(px0, Math.min(sceneWidth - 1, Math.ceil((cx + 1) * stepX) - 1));
-
         let rSum = 0;
         let gSum = 0;
         let bSum = 0;
@@ -140,14 +132,11 @@ export class AsciiPass {
         const g = (gSum / sampleCount) | 0;
         const b = (bSum / sampleCount) | 0;
         const litLum = (r * 77 + g * 150 + b * 29) >> 8;
-
         const gr = (grSum / sampleCount) | 0;
         const gg = (ggSum / sampleCount) | 0;
         const gb = (gbSum / sampleCount) | 0;
         const geomLum = (gr * 77 + gg * 150 + gb * 29) >> 8;
 
-        // Sample material and surface orientation from the cell center. Edge
-        // cells are still represented by the geometry-driven Sobel pass.
         const centerX = (px0 + px1) >> 1;
         const centerY = (py0 + py1) >> 1;
         const matIndex = (centerY * sceneWidth + centerX) * 4;
@@ -165,15 +154,20 @@ export class AsciiPass {
       }
     }
 
-    // 3. Sobel Edge Detection + Material Overrides + Atlas Blitting
+    // 3. Sobel Edge Detection + Code-Matrix Luminance Blitting
     const edgeThreshold = CONFIG.render.edgeThreshold;
     const satBoost = CONFIG.render.saturationBoost;
     const briBoost = CONFIG.render.brightnessBoost;
-    const activeRamp = this.rampGlyphIds[CONFIG.render.activeRampIndex];
-    const rampLen = activeRamp.length;
 
     const cw = this.atlas.cellWidth;
     const ch = this.atlas.cellHeight;
+    const outputWidth = destCtx.canvas.width;
+    const outputHeight = destCtx.canvas.height;
+    if (!this.outputImageData || this.outputImageData.width !== outputWidth || this.outputImageData.height !== outputHeight) {
+      this.outputImageData = destCtx.createImageData(outputWidth, outputHeight);
+      this.outputPixels = new Uint32Array(this.outputImageData.data.buffer);
+    }
+    const outputPixels = this.outputPixels;
 
     const cellGeomLum = this.cellGeomLum;
     const cellLitLum = this.cellLitLum;
@@ -216,7 +210,6 @@ export class AsciiPass {
         const l12 = cellGeomLum[rowBelow + cx];
         const l22 = cellGeomLum[rowBelow + xRight];
 
-        // Gradient X and Y
         const gx = (l20 + (l21 << 1) + l22) - (l00 + (l01 << 1) + l02);
         const gy = (l02 + (l12 << 1) + l22) - (l00 + (l10 << 1) + l20);
         const absGx = Math.abs(gx);
@@ -226,10 +219,6 @@ export class AsciiPass {
         let glyphId = 0;
         let isEdge = false;
 
-        // Check if edge is strong enough to override. Internal texture lines
-        // (shoji frames, tile courses, mortar) stay in the material pattern;
-        // only material/face boundaries or very high-contrast contours become
-        // structural ASCII edges.
         const matDef = MATERIAL_DEFS[mat as Material];
         const allowEdge = !matDef || matDef.useEdgeOverride;
         const materialBoundary =
@@ -242,144 +231,78 @@ export class AsciiPass {
           cellSurface[rowThis + xRight] !== surface ||
           cellSurface[rowAbove + cx] !== surface ||
           cellSurface[rowBelow + cx] !== surface;
-        const highContrastEdge = edgeMag > edgeThreshold * 1.75;
+        const highContrastEdge = edgeMag > edgeThreshold * 1.8;
 
-        if (allowEdge && edgeMag > edgeThreshold && (materialBoundary || surfaceBoundary || highContrastEdge)) {
+        // Only structural boundaries and strong contours become directional
+        // glyphs. Internal texture stays in the material pass.
+        if (allowEdge && litLum > 18 && edgeMag > edgeThreshold && (materialBoundary || surfaceBoundary || highContrastEdge)) {
           isEdge = true;
           if (absGx > (absGy << 1)) {
-            // Dominant horizontal gradient -> Vertical contour line
             glyphId = this.glyphVert;
           } else if (absGy > (absGx << 1)) {
-            // Dominant vertical gradient -> Horizontal contour line
             glyphId = this.glyphHoriz;
+          } else if ((gx > 0 && gy > 0) || (gx < 0 && gy < 0)) {
+            glyphId = this.glyphDiagUp;
           } else {
-            // Diagonal contour lines
-            if ((gx > 0 && gy > 0) || (gx < 0 && gy < 0)) {
-              glyphId = this.glyphDiagUp; // '/'
-            } else {
-              glyphId = this.glyphDiagDown; // '\'
-            }
-          }
-        } else if (mat !== Material.NONE && this.materialGlyphIds[mat]?.length) {
-          // 3b. Material Glyphs Override
-          const matGlyphs = this.materialGlyphIds[mat];
-          switch (mat) {
-            case Material.GRASS: {
-              // Sparse, low-contrast blades keep the lawn from visually
-              // competing with the solid architecture.
-              const hash = (cx * 13 + cy * 29) % 12;
-              glyphId = hash === 0 ? matGlyphs[0] : (hash === 1 ? matGlyphs[1] : 0);
-              break;
-            }
-            case Material.STONE: {
-              if (surface === Surface.VERTICAL) {
-                // Solid retaining walls with subtle mortar and face shading.
-                const seam = (cx + cy * 2) % 7 === 0;
-                const shade = litLum > 95 ? 3 : (litLum > 45 ? 4 : 5);
-                glyphId = seam ? matGlyphs[2] : matGlyphs[shade];
-              } else {
-                const shade = litLum > 120 ? 3 : (litLum > 55 ? 4 : 5);
-                const hash = (cx * 7 + cy * 11) % 13;
-                glyphId = hash === 0 ? matGlyphs[1] : matGlyphs[shade];
-              }
-              break;
-            }
-            case Material.ROOF_TILES: {
-              const shade = litLum > 145 ? 0 : (litLum > 85 ? 1 : (litLum > 35 ? 2 : 3));
-              if (surface === Surface.SLOPE_LEFT || surface === Surface.SLOPE_RIGHT) {
-                // Broad tile planes use solid density shading; sparse diagonal
-                // courses describe the roof pitch without visual static.
-                const slopeGlyph = surface === Surface.SLOPE_LEFT ? matGlyphs[4] : matGlyphs[5];
-                const course = (cx + cy * 2 + (surface === Surface.SLOPE_LEFT ? 0 : 1)) % 5;
-                glyphId = course === 0 ? slopeGlyph : matGlyphs[shade];
-              } else {
-                glyphId = (cy % 4 === 0) ? matGlyphs[4] : matGlyphs[shade];
-              }
-              break;
-            }
-            case Material.FOLIAGE: {
-              const hash = (cx * 11 + cy * 17 + (litLum >> 4)) & 7;
-              glyphId = hash < 2 ? matGlyphs[hash] : (hash === 2 ? matGlyphs[2] : 0);
-              break;
-            }
-            case Material.WATER: {
-              // Calm reflective water with occasional drifting ripples
-              const phase = (cx + animTick + (cy & 1)) % 6;
-              glyphId = phase === 0 ? matGlyphs[0] : (phase === 1 ? matGlyphs[1] : 0);
-              break;
-            }
-            case Material.FIRE:
-            case Material.LANTERN: {
-              const phase = (cx ^ cy ^ fireTick) & 3;
-              glyphId = matGlyphs[phase];
-              break;
-            }
-            case Material.SHOJI: {
-              // Large, quiet shoji panels. A sparse lattice reads as paper
-              // screens without turning every lit wall into visual static.
-              if ((cx % 5) === 0 && (cy % 4) === 0) {
-                glyphId = this.atlas.getGlyphIndex('+');
-              } else if ((cx % 5) === 0) {
-                glyphId = this.glyphVert;
-              } else if ((cy % 4) === 0) {
-                glyphId = this.glyphHoriz;
-              } else {
-                glyphId = litLum > 150 ? matGlyphs[4] : matGlyphs[5];
-              }
-              break;
-            }
-            case Material.WOOD: {
-              if (surface === Surface.VERTICAL || surface === Surface.CYLINDER) {
-                // Vertical timber faces use solid shading and sparse grain.
-                const seam = (cx * 7 + cy * 3) % 11 === 0;
-                const shade = litLum > 105 ? 3 : (litLum > 45 ? 4 : 5);
-                glyphId = seam ? matGlyphs[2] : matGlyphs[shade];
-              } else if (surface === Surface.HORIZONTAL || surface === Surface.SLOPE_LEFT || surface === Surface.SLOPE_RIGHT) {
-                const shade = litLum > 105 ? 3 : (litLum > 45 ? 4 : 5);
-                glyphId = (cy % 3 === 0) ? matGlyphs[0] : matGlyphs[shade];
-              } else {
-                const idx = (cy & 1) ? 0 : 1;
-                glyphId = matGlyphs[idx % matGlyphs.length];
-              }
-              break;
-            }
-            case Material.TORII: {
-              if (surface === Surface.VERTICAL || surface === Surface.CYLINDER) {
-                glyphId = (cx & 1) === 0 ? matGlyphs[0] : matGlyphs[4];
-              } else if (surface === Surface.HORIZONTAL) {
-                glyphId = (cy & 1) === 0 ? matGlyphs[1] : matGlyphs[2];
-              } else {
-                glyphId = matGlyphs[(cx + cy) % 4];
-              }
-              break;
-            }
-            default: {
-              const idx = (cx + cy) % matGlyphs.length;
-              glyphId = matGlyphs[idx];
-              break;
-            }
+            glyphId = this.glyphDiagDown;
           }
         } else {
-          // 3c. Luminance Density Ramp Fallback using lit luminance. Very dark
-          // sky and distant scenery stay empty so foreground volumes dominate.
-          const rampIdx = litLum < 26 ? 0 : Math.min(rampLen - 1, (litLum * rampLen) >> 8);
-          glyphId = activeRamp[rampIdx];
+          const glyphs = this.materialGlyphIds[mat] ?? [];
+          const textureHash = (cellIdx * 37 + mat * 71 + 17) & 0xffff;
+          const firstVisible = glyphs.findIndex((glyph) => glyph !== 0);
+          const visibleStart = firstVisible > 0 ? firstVisible : 0;
+          const visibleLength = Math.max(1, glyphs.length - visibleStart);
+          const shade = glyphs.length > 0
+            ? visibleStart + Math.max(0, Math.min(visibleLength - 1, Math.floor((litLum * visibleLength) / 256)))
+            : 0;
+
+          if (mat === Material.GRASS) {
+            // Sparse but genuinely visible blades, even in deep moonlight.
+            if (litLum > 4 && textureHash % 6 === 0) {
+              glyphId = glyphs[Math.min(glyphs.length - 1, 3 + Math.floor((litLum * 5) / 256))] ?? 0;
+            }
+          } else if (mat === Material.FOLIAGE) {
+            // Clustered leaves remain visible in shadow instead of becoming void.
+            if (litLum > 4 && textureHash % 4 < 2) {
+              glyphId = glyphs[Math.min(glyphs.length - 1, 3 + Math.floor((litLum * 5) / 256))] ?? 0;
+            }
+          } else if (mat === Material.WATER) {
+            const phase = (cx + animTick + (cy & 1)) % 9;
+            glyphId = phase < 4 ? glyphs[Math.min(glyphs.length - 1, phase + 2)] : 0;
+          } else if (mat === Material.SHOJI) {
+            if (litLum > 35) {
+              glyphId = textureHash % 7 === 0 ? this.atlas.getGlyphIndex('+') : (glyphs[shade] ?? 0);
+            }
+          } else if (mat === Material.FIRE || mat === Material.LANTERN || mat === Material.MOON) {
+            const phase = (textureHash ^ fireTick) % glyphs.length;
+            glyphId = glyphs[phase] ?? 0;
+          } else if (mat === Material.TORII) {
+            glyphId = surface === Surface.VERTICAL && textureHash % 3 === 0
+              ? this.atlas.getGlyphIndex('║')
+              : (glyphs[shade] ?? 0);
+          } else if (glyphs.length > 0) {
+            glyphId = glyphs[shade] ?? 0;
+            // Sparse deterministic cracks break up broad stone and wood faces.
+            if ((mat === Material.STONE || mat === Material.CLIFF) && litLum > 42 && textureHash % 29 === 0) {
+              glyphId = this.atlas.getGlyphIndex(textureHash % 2 === 0 ? 'x' : '/');
+            }
+          } else if (litLum > 40) {
+            const fallback = this.materialGlyphIds[Material.STONE];
+            const index = Math.max(0, Math.min(4, Math.floor(litLum / 52)));
+            glyphId = fallback[index] ?? 0;
+          }
         }
 
-        // 3d. Color Enhancement & Palette Quantization
+        // 3c. Color Enhancement & Palette Quantization
         const maxC = Math.max(r, g, b);
         const minC = Math.min(r, g, b);
         let rB = r;
         let gB = g;
         let bB = b;
-
-        // Brighten silhouettes and darken concave contact areas. This makes
-        // extruded faces read as volumes instead of evenly lit textures.
         const neighborAvg = (l00 + l10 + l20 + l01 + l21 + l02 + l12 + l22) >> 3;
         const centerGeomLum = cellGeomLum[cellIdx];
-        const aoBoost = neighborAvg > centerGeomLum + 14 ? 0.80 : 1.0;
-        const edgeBoost = isEdge ? 1.20 : 1.0;
-        const finalBoost = briBoost * aoBoost * edgeBoost;
+        const aoBoost = neighborAvg > centerGeomLum + 16 ? 0.82 : 1.0;
+        const finalBoost = briBoost * aoBoost * (isEdge ? 1.08 : 1.0);
 
         if (maxC > minC && maxC > 12) {
           rB = Math.min(255, Math.max(0, Math.round((minC + (r - minC) * satBoost) * finalBoost)));
@@ -391,22 +314,76 @@ export class AsciiPass {
           bB = Math.min(255, Math.round(b * finalBoost));
         }
 
+        // Material-specific color floors keep dark foliage and water readable
+        // after 64-color quantization without washing out the stone architecture.
+        if (mat === Material.FOLIAGE) {
+          rB = Math.max(rB, 18);
+          gB = Math.max(gB, 72);
+          bB = Math.max(bB, 48);
+        } else if (mat === Material.GRASS) {
+          rB = Math.max(rB, 10);
+          gB = Math.max(gB, 38);
+          bB = Math.max(bB, 26);
+        } else if (mat === Material.WATER) {
+          rB = Math.max(rB, 12);
+          gB = Math.max(gB, 48);
+          bB = Math.max(bB, 82);
+        }
+
         const colorIdx = quantizeRGB(rB, gB, bB);
 
-        // 3e. Blit from pre-rendered atlas
-        this.atlas.blit(destCtx, glyphId, colorIdx, cx * cw, destY);
+        // 3d. Copy the glyph cell into the CPU framebuffer.
+        this.atlas.blitToPixelBuffer(outputPixels, outputWidth, glyphId, colorIdx, cx * cw, destY);
       }
     }
+
+    // One upload instead of one drawImage call per character cell.
+    destCtx.putImageData(this.outputImageData!, 0, 0);
   }
 
   /**
-   * Foreground ASCII weather. Drawn after the scene pass so rain stays crisp
-   * and clearly separated from the material glyphs underneath it.
+   * Render floating in-game text (Player nameplate, Enemy health bars, "Stairs" label)
+   */
+  public drawFloatingText(
+    destCtx: CanvasRenderingContext2D,
+    text: string,
+    cellX: number,
+    cellY: number,
+    colorCss: string,
+    bgCss = 'rgba(2, 4, 8, 0.85)'
+  ): void {
+    const cw = this.atlas.cellWidth;
+    const ch = this.atlas.cellHeight;
+    const x = Math.round(cellX * cw);
+    const y = Math.round(cellY * ch);
+
+    destCtx.save();
+    destCtx.font = `bold 11px ${CONFIG.display.fontFamily}`;
+    destCtx.textBaseline = 'middle';
+    destCtx.textAlign = 'center';
+
+    const textMetrics = destCtx.measureText(text);
+    const pad = 4;
+    destCtx.fillStyle = bgCss;
+    destCtx.fillRect(
+      x - textMetrics.width / 2 - pad,
+      y - 7,
+      textMetrics.width + pad * 2,
+      14
+    );
+
+    destCtx.fillStyle = colorCss;
+    destCtx.fillText(text, x, y);
+    destCtx.restore();
+  }
+
+  /**
+   * Foreground atmospheric rain and mist particles
    */
   public renderAtmosphere(destCtx: CanvasRenderingContext2D, gameTime: number): void {
     const drops = CONFIG.atmosphere.rainDrops;
-    const fall = Math.floor(gameTime * 26);
-    const wind = Math.floor(gameTime * 3.5);
+    const fall = Math.floor(gameTime * 24);
+    const wind = Math.floor(gameTime * 3);
     const cw = this.atlas.cellWidth;
     const ch = this.atlas.cellHeight;
 
@@ -414,8 +391,8 @@ export class AsciiPass {
       const x = (i * 97 + wind + (i % 5) * 11) % this.cols;
       const y = (i * 53 + fall + (i % 7) * 9) % this.rows;
       const glyphId = i % 4 === 0 ? this.glyphVert : this.glyphDiagUp;
-      const shade = 42 + (i % 4) * 13;
-      const colorIdx = quantizeRGB(shade, shade + 28, shade + 58);
+      const shade = 45 + (i % 4) * 12;
+      const colorIdx = quantizeRGB(shade, shade + 25, shade + 55);
       this.atlas.blit(destCtx, glyphId, colorIdx, x * cw, y * ch);
     }
   }

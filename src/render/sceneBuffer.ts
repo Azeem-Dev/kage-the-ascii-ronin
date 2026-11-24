@@ -335,9 +335,12 @@ export class SceneBuffer {
     ctx.globalCompositeOperation = 'multiply';
     ctx.drawImage(this.lightCanvas, 0, 0);
 
-    // 3. Screen/lighter blend for glowing lantern cores
+    // 3. Restrained additive blend for glowing lantern cores. Keeping this
+    // subtle prevents broad radial lights from becoming neon rings.
     ctx.globalCompositeOperation = 'lighter';
+    ctx.globalAlpha = 0.28;
     ctx.drawImage(this.lightCanvas, 0, 0);
+    ctx.globalAlpha = 1;
 
     // 4. Cool atmospheric perspective. The upper half of the scene reads as
     // farther away, while the foreground retains stronger contrast.

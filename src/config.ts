@@ -18,7 +18,7 @@ export const CONFIG = {
     fontSize: 8,
     cellWidth: 6,
     cellHeight: 6,
-    defaultDensity: 'high' as 'low' | 'medium' | 'high',
+    defaultDensity: 'medium' as 'low' | 'medium' | 'high',
     densities: {
       low: { name: 'Low (192x108)', cols: 192, rows: 108 },
       medium: { name: 'Medium (256x144)', cols: 256, rows: 144 },
@@ -37,8 +37,8 @@ export const CONFIG = {
     edgeThreshold: 36,
     
     // Color saturation & brightness boost for the glowing ASCII terminal look
-    saturationBoost: 1.25,
-    brightnessBoost: 1.15,
+    saturationBoost: 1.05,
+    brightnessBoost: 1.02,
     
     // Background cell tint opacity (gives subtle CRT phosphor glow)
     cellBgOpacity: 0.14,
@@ -86,6 +86,13 @@ export const CONFIG = {
     rainDrops: 64,
     fogLayers: 3,
     fireflies: 10,
+  },
+
+  // Conservative automatic quality fallback for older CPUs/integrated GPUs.
+  performance: {
+    autoScale: true,
+    minimumFps: 45,
+    afterSeconds: 4,
   },
 
   // Feudal Japan night atmosphere colors

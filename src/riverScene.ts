@@ -60,7 +60,7 @@ export function startRiverScene(): void {
     if (spec) return { id: i.id, x: i.x, y: i.y, width: (spec.a + spec.b) * i.scale * .9, height: (spec.wall + spec.rise) * i.scale * .85 };
     return { id: i.id, x: i.x, y: i.y, width: i.asset.width * i.scale * .75, height: i.asset.height * i.scale * .8 };
   };
-  let mudgateLit = false;  const keys = new Set<string>();
+  let mudgateLit = false; const keys = new Set<string>();
   const playable = [RONIN, ...CHARACTERS];
   let playerIndex = 0;
   const hero = { x: 770, y: -22, vx: 0, vy: 0, facing: 'right' as 'left' | 'right', moving: false, variant: 0 };
@@ -407,28 +407,32 @@ export function startRiverScene(): void {
       const houseSpec = HOUSE_SPECS[baseId(instance.asset.id)];
       // Distant LOD remains deterministic; static foliage never flashes between
       // independently rounded regeneration frames.
-      draws.push({ ...at(instance.x, instance.y), draw: () => {
-        const flying = instance.asset.category === 'Creature';
-        if (!flying) {
-          if (houseSpec) {
-            const sa = (houseSpec.a + houseSpec.b) * instance.scale * .85;
-            const sb = (houseSpec.a + houseSpec.b) * instance.scale * .3;
-            shadow(ids, instance.x + renderer.lighting.shadowX * 14, instance.y + renderer.lighting.shadowY * 14, sa, sb);
-          } else {
-            shadow(ids, instance.x + 3, instance.y + 1, isTree ? 12 : 8, isTree ? 3.5 : 2.5);
+      draws.push({
+        ...at(instance.x, instance.y), draw: () => {
+          const flying = instance.asset.category === 'Creature';
+          if (!flying) {
+            if (houseSpec) {
+              const sa = (houseSpec.a + houseSpec.b) * instance.scale * .85;
+              const sb = (houseSpec.a + houseSpec.b) * instance.scale * .3;
+              shadow(ids, instance.x + renderer.lighting.shadowX * 14, instance.y + renderer.lighting.shadowY * 14, sa, sb);
+            } else {
+              shadow(ids, instance.x + 3, instance.y + 1, isTree ? 12 : 8, isTree ? 3.5 : 2.5);
+            }
           }
+          const compiled = sprite(instance.asset, { time: flying ? time + instance.seed % 5 : 0, seed: instance.seed, variant: instance.variant, action: 'idle', facing: 'right' }, instance.scale / detailStep, flying);
+          place(ids, compiled, instance.x + (flying ? Math.sin(time * .7 + instance.seed) * 6 : 0), instance.y, flying ? LAYER.effect : LAYER.prop, !flying && !houseSpec, flying ? -Math.cos(time * .9 + instance.seed) * 3 : 0);
         }
-        const compiled = sprite(instance.asset, { time: flying ? time + instance.seed % 5 : 0, seed: instance.seed, variant: instance.variant, action: 'idle', facing: 'right' }, instance.scale / detailStep, flying);
-        place(ids, compiled, instance.x + (flying ? Math.sin(time * .7 + instance.seed) * 6 : 0), instance.y, flying ? LAYER.effect : LAYER.prop, !flying && !houseSpec, flying ? -Math.cos(time * .9 + instance.seed) * 3 : 0);
-      } });
+      });
     }
     seeThrough = { x: cellX(hero.x, hero.y), y: cellY(hero.x, hero.y) - (mounted ? 30 : 20) / detailStep, rx: (mounted ? 24 : 15) / detailStep, ry: (mounted ? 30 : 22) / detailStep };
     const actorOptions = { time, seed: 17, variant: hero.variant, action: hero.moving ? 'walk' as const : 'idle' as const, facing: hero.facing };
-    draws.push({ ...at(horse.x, horse.y), draw: () => {
-      shadow(ids, horse.x, horse.y, 24, 3);
-      place(ids, sprite(HORSE, { ...actorOptions, seed: 31, variant: 0, action: mounted && hero.moving ? 'walk' : 'idle', facing: horse.facing }, .48 / detailStep, true), horse.x, horse.y, LAYER.actor); // always an actor: prop base-darkening made its legs vanish (looked like floating)
-      if (mounted) place(ids, sprite(playable[playerIndex], { ...actorOptions, action: 'sit' as const }, (playable[playerIndex].id.startsWith('dwarf') ? 30 : 41) / playable[playerIndex].height / detailStep, true), hero.x - (hero.facing === 'right' ? 2 : -2), hero.y, LAYER.actor, false, 15 - (hero.moving ? Math.abs(Math.sin(time * 6)) * .6 : 0));
-    } });
+    draws.push({
+      ...at(horse.x, horse.y), draw: () => {
+        shadow(ids, horse.x, horse.y, 24, 3);
+        place(ids, sprite(HORSE, { ...actorOptions, seed: 31, variant: 0, action: mounted && hero.moving ? 'walk' : 'idle', facing: horse.facing }, .48 / detailStep, true), horse.x, horse.y, LAYER.actor); // always an actor: prop base-darkening made its legs vanish (looked like floating)
+        if (mounted) place(ids, sprite(playable[playerIndex], { ...actorOptions, action: 'sit' as const }, (playable[playerIndex].id.startsWith('dwarf') ? 30 : 41) / playable[playerIndex].height / detailStep, true), hero.x - (hero.facing === 'right' ? 2 : -2), hero.y, LAYER.actor, false, 15 - (hero.moving ? Math.abs(Math.sin(time * 6)) * .6 : 0));
+      }
+    });
     // Townsfolk and carts walking the streets (positions are a pure function of time).
     const viewRight = cameraX + cols * detailStep; const viewBottom = cameraY + rows * detailStep;
     // Wildlife (Agent F): herds, birds, butterflies, fireflies around the camera.
@@ -439,12 +443,14 @@ export function startRiverScene(): void {
       const airborne = animal.z > 0;
       // Herds graze in the countryside, never in the streets.
       if (!airborne && LANDMARKS.some(r => (r.id === 'town' || r.id === 'village' || r.id === 'outskirts') && Math.hypot(animal.x - r.x, animal.y - r.y) < (r.id === 'town' ? 260 : 150))) continue;
-      draws.push({ ...at(animal.x, animal.y), draw: () => {
-        if (!airborne) shadow(ids, animal.x, animal.y, 8 * animal.scale / .3, 2);
-        place(ids, sprite(asset, { time: time + animal.seed % 5, seed: animal.seed, variant: animal.variant, facing: animal.facing, action: animal.action }, animal.scale / detailStep, true),
-          animal.x, animal.y, airborne ? LAYER.effect : LAYER.actor, !airborne, animal.z);
-        if (asset.id === 'firefly') light(animal.x, animal.y, animal.z, 4, .6, 1, .2);
-      } });
+      draws.push({
+        ...at(animal.x, animal.y), draw: () => {
+          if (!airborne) shadow(ids, animal.x, animal.y, 8 * animal.scale / .3, 2);
+          place(ids, sprite(asset, { time: time + animal.seed % 5, seed: animal.seed, variant: animal.variant, facing: animal.facing, action: animal.action }, animal.scale / detailStep, true),
+            animal.x, animal.y, airborne ? LAYER.effect : LAYER.actor, !airborne, animal.z);
+          if (asset.id === 'firefly') light(animal.x, animal.y, animal.z, 4, .6, 1, .2);
+        }
+      });
     }
     for (const mover of MOVERS) {
       const asset = ASSET_BY_ID.get(mover.assetId);
@@ -454,29 +460,35 @@ export function startRiverScene(): void {
       if (msx < cameraX - 80 || msx > viewRight + 80 || msy < cameraY - 10 || msy - 60 > viewBottom) continue;
       const options = { time: time + mover.offset * 7, seed: 41, variant: mover.variant, action: state.moving ? 'walk' as const : 'idle' as const, facing: state.facing };
       if (mover.kind === 'walker') {
-        draws.push({ ...at(state.x, state.y), draw: () => {
-          shadow(ids, state.x, state.y, 9, 2);
-          place(ids, sprite(asset, options, mover.scale / detailStep, true), state.x, state.y, LAYER.actor);
-        } });
+        draws.push({
+          ...at(state.x, state.y), draw: () => {
+            shadow(ids, state.x, state.y, 9, 2);
+            place(ids, sprite(asset, options, mover.scale / detailStep, true), state.x, state.y, LAYER.actor);
+          }
+        });
       } else {
         // A small horse pulls the cart; the horse walks ahead along the road vector.
         const hx = state.x + state.dirX * 32; const hy = state.y + state.dirY * 32;
-        draws.push({ ...at(state.x, state.y), draw: () => {
-          shadow(ids, state.x, state.y, 20, 3);
-          // Driver first, a little behind the cart, so the cart hides the legs and they read as seated.
-          const driver = ASSET_BY_ID.get(mover.driver ?? 'peasant');
-          if (driver) place(ids, sprite(driver, { ...options, action: 'idle', facing: state.facing }, .34 / detailStep, true), state.x + (state.facing === 'right' ? 6 : -6), state.y, LAYER.actor, false, 9);
-          place(ids, sprite(asset, { ...options, action: 'idle' }, mover.scale / detailStep, true), state.x, state.y, LAYER.actor);
-          shadow(ids, hx, hy, 16, 2.5);
-          place(ids, sprite(HORSE, { ...options, seed: 33 }, .3 / detailStep, true), hx, hy, LAYER.actor);
-        } });
+        draws.push({
+          ...at(state.x, state.y), draw: () => {
+            shadow(ids, state.x, state.y, 20, 3);
+            // Driver first, a little behind the cart, so the cart hides the legs and they read as seated.
+            const driver = ASSET_BY_ID.get(mover.driver ?? 'peasant');
+            if (driver) place(ids, sprite(driver, { ...options, action: 'idle', facing: state.facing }, .34 / detailStep, true), state.x + (state.facing === 'right' ? 6 : -6), state.y, LAYER.actor, false, 9);
+            place(ids, sprite(asset, { ...options, action: 'idle' }, mover.scale / detailStep, true), state.x, state.y, LAYER.actor);
+            shadow(ids, hx, hy, 16, 2.5);
+            place(ids, sprite(HORSE, { ...options, seed: 33 }, .3 / detailStep, true), hx, hy, LAYER.actor);
+          }
+        });
       }
     }
-    if (!mounted) draws.push({ ...at(hero.x, hero.y), draw: () => {
-      shadow(ids, hero.x, hero.y, 11, 2.5);
-      const asset = playable[playerIndex];
-      place(ids, sprite(asset, actorOptions, (asset.id.startsWith('dwarf') ? 30 : 41) / asset.height / detailStep, true), hero.x, hero.y, LAYER.actor);
-    } });
+    if (!mounted) draws.push({
+      ...at(hero.x, hero.y), draw: () => {
+        shadow(ids, hero.x, hero.y, 11, 2.5);
+        const asset = playable[playerIndex];
+        place(ids, sprite(asset, actorOptions, (asset.id.startsWith('dwarf') ? 30 : 41) / asset.height / detailStep, true), hero.x, hero.y, LAYER.actor);
+      }
+    });
     draws.sort((a, b) => a.y - b.y).forEach(item => item.draw());
     // Lights: lanterns glow at all times and dominate at night; the hero carries a faint light after dusk.
     const night = 1 - dayFactor();
@@ -502,8 +514,10 @@ export function startRiverScene(): void {
     const canScroll = lastCols === cols && lastRows === rows && lastDetailStep === detailStep && Number.isFinite(lastCameraX);
     const scrollX = canScroll ? -Math.round((cameraX - lastCameraX) / detailStep) : 0;
     const scrollY = canScroll ? -Math.round((cameraY - lastCameraY) / detailStep) : 0;
-    if (gpu) { renderer.prepare(ids, cols, rows); gpu.present(renderer, cols, rows, terrain.waterMask, time, 1 - dayFactor(),
-      { snowCover: weather.snowCover, flash: weather.flash, camCellX: cameraX / detailStep, camCellY: cameraY / detailStep }); }
+    if (gpu) {
+      renderer.prepare(ids, cols, rows); gpu.present(renderer, cols, rows, terrain.waterMask, time, 1 - dayFactor(),
+        { snowCover: weather.snowCover, flash: weather.flash, camCellX: cameraX / detailStep, camCellY: cameraY / detailStep });
+    }
     else renderer.present(ctx, ids, cols, rows, scrollX, scrollY);
     lastCameraX = cameraX; lastCameraY = cameraY;
     lastCols = cols; lastRows = rows; lastDetailStep = detailStep;

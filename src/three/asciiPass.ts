@@ -13,7 +13,7 @@ const ATLAS = RAMP + EDGES;
  */
 export class AsciiPass {
   cols = 1; rows = 1;
-  private target = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter });
+  private target = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, depthTexture: new THREE.DepthTexture(1, 1) });
   private quadScene = new THREE.Scene();
   private quadCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
   private material: THREE.ShaderMaterial;
@@ -24,6 +24,8 @@ export class AsciiPass {
     this.material = new THREE.ShaderMaterial({
       uniforms: {
         tScene: { value: this.target.texture },
+        tDepth: { value: this.target.depthTexture },
+        near: { value: 5 }, far: { value: 3000 },
         tGlyphs: { value: this.atlas() },
         grid: { value: new THREE.Vector2(1, 1) },
         glyphCount: { value: RAMP.length },
@@ -32,8 +34,10 @@ export class AsciiPass {
       },
       vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0., 1.); }',
       fragmentShader: `
-        uniform sampler2D tScene; uniform sampler2D tGlyphs; uniform vec2 grid; uniform float glyphCount; uniform float atlasCount; uniform float exposure;
+        uniform sampler2D tScene; uniform sampler2D tDepth; uniform sampler2D tGlyphs; uniform vec2 grid; uniform float glyphCount; uniform float atlasCount; uniform float exposure;
+        uniform float near; uniform float far;
         varying vec2 vUv;
+        float depthAt(vec2 cell){ float d = texture2D(tDepth, (cell + .5) / grid).r; return near * far / (far - d * (far - near)); }
         vec3 aces(vec3 x){ return clamp((x*(2.51*x+.03))/(x*(2.43*x+.59)+.14), 0., 1.); }
         vec3 sceneAt(vec2 cell){ return pow(aces(texture2D(tScene, (cell + .5) / grid).rgb * exposure), vec3(1. / 2.2)); }
         float L(vec3 c){ return dot(c, vec3(.299, .587, .114)); }
@@ -48,12 +52,14 @@ export class AsciiPass {
           c = mix(c, c * vec3(.85, .97, 1.1), (1. - smoothstep(.15, .6, lum)) * .3);
           // Dark cells stay empty: negative space carries the picture.
           float g = lum < .045 ? 0. : clamp(floor(smoothstep(.03, .75, lum) * glyphCount), 1., glyphCount - 1.);
-          // Silhouette and facet edges become line glyphs oriented along the edge.
-          float gx = L(sceneAt(cell + vec2(1., 0.))) - L(sceneAt(cell - vec2(1., 0.)));
-          float gy = L(sceneAt(cell + vec2(0., 1.))) - L(sceneAt(cell - vec2(0., 1.)));
+          // Only silhouettes (big jumps in depth) become line glyphs along the edge;
+          // grass and texture never do, so fields stay calm.
+          float d0 = depthAt(cell);
+          float gx = (depthAt(cell + vec2(1., 0.)) - depthAt(cell - vec2(1., 0.))) / d0;
+          float gy = (depthAt(cell + vec2(0., 1.)) - depthAt(cell - vec2(0., 1.))) / d0;
           float edge = length(vec2(gx, gy));
           float boost = 1.;
-          if (edge > .11 && lum > .07) {
+          if (edge > .16 && lum > .07) {
             float a = mod(atan(gy, gx) + 3.14159265 / 8., 3.14159265); // edge normal angle
             // Normal angle -> the glyph that runs along the edge.
             float dir = floor(a / (3.14159265 / 4.));
@@ -88,11 +94,11 @@ export class AsciiPass {
     return texture;
   }
 
-  resize(width: number, height: number, _pixelRatio: number): void {
-    // Phones get slightly larger cells so glyphs stay legible.
+  resize(width: number, height: number, pixelRatio: number): void {
+    // Cells are measured in DEVICE pixels so the grid stays fine on scaled displays.
     const coarse = Math.min(width, height) < 600;
-    this.cellWidth = coarse ? 5 : 6; this.cellHeight = coarse ? 9 : 10;
-    this.cols = Math.ceil(width / this.cellWidth); this.rows = Math.ceil(height / this.cellHeight);
+    this.cellWidth = coarse ? 6 : 5; this.cellHeight = coarse ? 10 : 9;
+    this.cols = Math.ceil(width * pixelRatio / this.cellWidth); this.rows = Math.ceil(height * pixelRatio / this.cellHeight);
     this.target.setSize(this.cols * 2, this.rows * 2);
     (this.material.uniforms.grid.value as THREE.Vector2).set(this.cols, this.rows);
   }
@@ -100,8 +106,9 @@ export class AsciiPass {
   /** Debug: draw the plain 3D render (?raw=1) to separate art problems from shader problems. */
   raw = new URLSearchParams(location.search).has('raw');
 
-  render(scene: THREE.Scene, camera: THREE.Camera): void {
+  render(scene: THREE.Scene, camera: THREE.PerspectiveCamera): void {
     if (this.raw) { this.renderer.setRenderTarget(null); this.renderer.render(scene, camera); return; }
+    this.material.uniforms.near.value = camera.near; this.material.uniforms.far.value = camera.far;
     this.renderer.setRenderTarget(this.target);
     this.renderer.render(scene, camera);
     this.renderer.setRenderTarget(null);

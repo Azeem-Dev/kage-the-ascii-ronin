@@ -50,7 +50,11 @@ export class TerrainLayer {
     return c;
   }
 
-  get(x: number, y: number, cols: number, rows: number, step: number, time: number): Uint32Array {
+  /** x, y, step are in SCREEN units. toWorldX/Y map a screen point to the world
+   * point to sample (identity for top-down, inverse projection for isometric).
+   * The mapping is linear, so whole-cell camera shifts still reuse cached cells. */
+  get(x: number, y: number, cols: number, rows: number, step: number, time: number,
+    toWorldX: (sx: number, sy: number) => number = sx => sx, toWorldY: (sx: number, sy: number) => number = (_sx, sy) => sy): Uint32Array {
     const key = `${x}:${y}:${cols}:${rows}:${step}`;
     if (key !== this.key) {
       this.key = key; this.tick = -1;
@@ -96,7 +100,9 @@ export class TerrainLayer {
       }
       this.grassCount = kept;
       const sampleCell = (sx: number, sy: number) => {
-        const wx = x + sx * step; const wy = y + sy * step;
+        // Screen-space position (grass strands are tracked in this space).
+        const px = x + sx * step; const py = y + sy * step;
+        const wx = Math.round(toWorldX(px, py)); const wy = Math.round(toWorldY(px, py));
         const index = sy * cols + sx;
         if (waterDepth(wx, wy) > 0) this.waterMask[index] = 1;
         const cell = landscapeCell(wx, wy, 0, 17);
@@ -106,7 +112,7 @@ export class TerrainLayer {
         // Grass, wheat and undergrowth stems become swaying strands.
         if ((cell.glyph === '|' || cell.glyph === '/' || cell.glyph === '\\' || cell.glyph === '!') && this.grassCount < this.grassX.length) {
           const r = this.grassCount++; const o = r * 6; const tip = this.tipColor(cell.color);
-          this.grassX[r] = wx; this.grassY[r] = wy;
+          this.grassX[r] = px; this.grassY[r] = py;
           this.grassIds[o] = this.renderer.glyph('\\', cell.color); this.grassIds[o + 1] = this.renderer.glyph(cell.glyph === '!' ? '!' : '|', cell.color); this.grassIds[o + 2] = this.renderer.glyph('/', cell.color);
           this.grassIds[o + 3] = this.renderer.glyph('`', tip); this.grassIds[o + 4] = this.renderer.glyph("'", tip); this.grassIds[o + 5] = this.renderer.glyph(',', tip);
           // About half the stems are tall: they grow a bright tip into the cell above.

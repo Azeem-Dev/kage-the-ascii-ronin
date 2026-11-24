@@ -26,7 +26,7 @@ export class AssetCache {
       anchorX: Math.round((options.facing === 'left' ? asset.width - 1 - asset.anchor.x : asset.anchor.x) * scale),
       anchorY: Math.round(asset.anchor.y * scale),
     };
-    if (entries.size >= (animated ? 768 : 512)) entries.delete(entries.keys().next().value!);
+    if (entries.size >= (animated ? 2048 : 1024)) entries.delete(entries.keys().next().value!);
     entries.set(key, entry);
     return entry;
   }

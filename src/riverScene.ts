@@ -19,6 +19,8 @@ import { Atmosphere } from './game/atmosphere.ts';
 import { Weather, type Fire } from './game/weather.ts';
 import { MOVERS, moverAt } from './game/townLife.ts';
 import { Wildlife } from './game/wildlife.ts';
+import { ISO_BUILDINGS } from './assets/isoBuildings.ts';
+import { ISO, inputToWorld, toScreenX, toScreenY, toWorldX, toWorldY, worldBounds } from './game/view.ts';
 import './riverScene.css';
 
 interface Instance { id: string; asset: AsciiAsset; x: number; y: number; seed: number; scale: number; variant: number }
@@ -223,19 +225,34 @@ export function startRiverScene(): void {
   document.getElementById('pause-day')!.onclick = () => toggleWeather('KeyN');
   canvas.addEventListener('pointerdown', event => {
     if (paused) return;
-    target = { x: cameraX + event.clientX / innerWidth * cols * detailStep, y: cameraY + event.clientY / innerHeight * rows * detailStep };
+    const px = cameraX + event.clientX / innerWidth * cols * detailStep; const py = cameraY + event.clientY / innerHeight * rows * detailStep;
+    target = { x: toWorldX(px, py), y: toWorldY(px, py) };
   });
 
-  function place(ids: Uint32Array, compiled: PlacedSprite, x: number, y: number, layer: number = LAYER.prop, castShadow = true): void {
-    const sx = (x - cameraX) / detailStep; const sy = (y - cameraY) / detailStep;
-    renderer.stamp(ids, cols, rows, compiled.sprite, sx - compiled.anchorX, sy - compiled.anchorY, layer, castShadow ? sy : undefined);
+  // All drawing helpers take WORLD positions and project them (top-down or isometric).
+  /** Painter's-order key: screen depth of a world ground point. */
+  const depth = (x: number, y: number) => toScreenY(x, y);
+  const cellX = (x: number, y: number) => (toScreenX(x, y) - cameraX) / detailStep;
+  const cellY = (x: number, y: number) => (toScreenY(x, y) - cameraY) / detailStep;
+  const sprite = (asset: AsciiAsset, options: Parameters<AssetCache['get']>[1], scale: number, animated = false) => assetCache.get(asset, options, scale, animated);
+  /** lift = height above the ground point, straight up the screen (riders, birds). */
+  function place(ids: Uint32Array, compiled: PlacedSprite, x: number, y: number, layer: number = LAYER.prop, castShadow = true, lift = 0): void {
+    const sx = cellX(x, y); const sy = cellY(x, y) - lift / detailStep;
+    // Scenery standing in front of the hero gets a see-through window around them.
+    const hole = layer === LAYER.prop && depth(x, y) > depth(hero.x, hero.y) ? seeThrough : undefined;
+    renderer.stamp(ids, cols, rows, compiled.sprite, sx - compiled.anchorX, sy - compiled.anchorY, layer, castShadow ? sy : undefined, hole);
   }
+  /** Window (in cells) around the hero that scenery in front of them leaves open. */
+  let seeThrough: { x: number; y: number; rx: number; ry: number } | undefined;
   function plot(ids: Uint32Array, x: number, y: number, id: number): void {
-    const sx = Math.round((x - cameraX) / detailStep); const sy = Math.round((y - cameraY) / detailStep);
+    const sx = Math.round(cellX(x, y)); const sy = Math.round(cellY(x, y));
     if (sx >= 0 && sy >= 0 && sx < cols && sy < rows) ids[sy * cols + sx] = id;
   }
   function shadow(_ids: Uint32Array, x: number, y: number, rx: number, ry: number): void {
-    renderer.contactShadow(cols, rows, (x - cameraX) / detailStep, (y - cameraY) / detailStep, Math.max(1, rx * .7 / detailStep), Math.max(1, ry / detailStep));
+    renderer.contactShadow(cols, rows, cellX(x, y), cellY(x, y), Math.max(1, rx * .7 / detailStep), Math.max(1, ry / detailStep));
+  }
+  function light(x: number, y: number, lift: number, radius: number, r: number, g: number, b: number): void {
+    renderer.addLight(cols, rows, cellX(x, y), cellY(x, y) - lift / detailStep, radius, r, g, b);
   }
   /** 1 at noon, 0 at midnight. */
   function dayFactor(): number { return Math.sin(atmosphere.daylight * Math.PI * 2) * .5 + .5; }
@@ -265,6 +282,10 @@ export function startRiverScene(): void {
       instances = props.flatMap(prop => {
         const asset = ASSET_BY_ID.get(prop.assetId);
         if (!asset) { if (!missingAssets.has(prop.assetId)) { missingAssets.add(prop.assetId); console.warn(`World placement skipped: unknown asset "${prop.assetId}"`); } return []; }
+        // Isometric view swaps flat front-view buildings for real boxes with walls and roofs.
+        // Their anchor is the footprint centre, so move it back from the old front-base point.
+        const iso = ISO ? ISO_BUILDINGS[prop.assetId] : undefined;
+        if (iso) return [{ ...prop, asset: iso, scale: 1, y: prop.y - (iso.footprint?.[0]?.radius ?? 0) }];
         return [{ ...prop, asset }];
       });
       colliders = instances.flatMap(collidersFor);
@@ -278,8 +299,10 @@ export function startRiverScene(): void {
     if (!paused) {
       time += dt;
       atmosphere.update(dt);
-      let mx = Number(keys.has('KeyD') || keys.has('ArrowRight')) - Number(keys.has('KeyA') || keys.has('ArrowLeft'));
-      let my = Number(keys.has('KeyS') || keys.has('ArrowDown')) - Number(keys.has('KeyW') || keys.has('ArrowUp'));
+      // Keys are screen directions; in isometric view they turn into world diagonals.
+      let [mx, my] = inputToWorld(
+        Number(keys.has('KeyD') || keys.has('ArrowRight')) - Number(keys.has('KeyA') || keys.has('ArrowLeft')),
+        Number(keys.has('KeyS') || keys.has('ArrowDown')) - Number(keys.has('KeyW') || keys.has('ArrowUp')));
       if (mx || my) target = null;
       if (target && !mx && !my) {
         const dx = target.x - hero.x; const dy = target.y - hero.y;
@@ -294,7 +317,8 @@ export function startRiverScene(): void {
       const obstacles = mounted ? colliders : colliders.concat([-24, -12, 0, 12, 24].map(offset => ({ x: horse.x + offset, y: horse.y - 1, radius: 5 })));
       moveBody(hero, mx, my, speed, dt, obstacles, mounted ? 4 : 2);
       hero.moving = Math.hypot(hero.x - oldX, hero.y - oldY) > .01;
-      if (length && mx) hero.facing = mx > 0 ? 'right' : 'left';
+      const screenDX = toScreenX(mx, my);
+      if (length && Math.abs(screenDX) > .01) hero.facing = screenDX > 0 ? 'right' : 'left';
       stepDistance += Math.hypot(hero.x - oldX, hero.y - oldY);
       if (stepDistance > (mounted ? 4 : 2.5)) {
         stepDistance = 0;
@@ -310,10 +334,11 @@ export function startRiverScene(): void {
     }
     // Coarse terrain always samples the same WORLD lattice. Moving one world
     // unit must not replace every distant grass/stone sample with random detail.
-    cameraX = Math.floor((hero.x - cols * detailStep * .61) / detailStep) * detailStep;
-    cameraY = Math.floor((hero.y - rows * detailStep * .62) / detailStep) * detailStep;
+    cameraX = Math.floor((toScreenX(hero.x, hero.y) - cols * detailStep * (ISO ? .5 : .61)) / detailStep) * detailStep;
+    cameraY = Math.floor((toScreenY(hero.x, hero.y) - rows * detailStep * (ISO ? .6 : .62)) / detailStep) * detailStep;
+    const viewWorld = worldBounds(cameraX, cameraY, cols * detailStep, rows * detailStep);
     applyLighting();
-    const ids = renderer.begin(terrain.get(cameraX, cameraY, cols, rows, detailStep, time));
+    const ids = renderer.begin(terrain.get(cameraX, cameraY, cols, rows, detailStep, time, toWorldX, toWorldY));
     const terrainEnd = performance.now();
     for (const step of footsteps) {
       if (waterDepth(step.x, step.y) > 0) continue;
@@ -350,88 +375,96 @@ export function startRiverScene(): void {
       }
     }
     const draws: { y: number; draw: () => void }[] = [];
+    const at = (x: number, y: number) => ({ y: depth(x, y) });
     let visibleTrees = 0;
     for (const instance of instances) {
       const height = instance.asset.height * instance.scale;
       const width = instance.asset.width * instance.scale;
-      if (instance.x + width < cameraX || instance.x - width > cameraX + cols * detailStep || instance.y < cameraY || instance.y - height > cameraY + rows * detailStep) continue;
+      const ix = toScreenX(instance.x, instance.y); const iy = toScreenY(instance.x, instance.y);
+      if (ix + width < cameraX || ix - width > cameraX + cols * detailStep || iy < cameraY || iy - height > cameraY + rows * detailStep) continue;
       if (instance.asset === PINE) visibleTrees++;
       // Distant LOD remains deterministic; static foliage never flashes between
       // independently rounded regeneration frames.
-      draws.push({ y: instance.y, draw: () => {
+      draws.push({ ...at(instance.x, instance.y), draw: () => {
         const flying = instance.asset.category === 'Creature';
         if (!flying) shadow(ids, instance.x + 4, instance.y + 1, instance.asset === PINE ? 18 : 10, 3);
-        const compiled = assetCache.get(instance.asset, { time: flying ? time + instance.seed % 5 : 0, seed: instance.seed, variant: instance.variant, action: 'idle', facing: 'right' }, instance.scale / detailStep, flying);
-        place(ids, compiled, instance.x + (flying ? Math.sin(time * .7 + instance.seed) * 6 : 0), instance.y + (flying ? Math.cos(time * .9 + instance.seed) * 3 : 0), flying ? LAYER.effect : LAYER.prop, !flying);
+        const compiled = sprite(instance.asset, { time: flying ? time + instance.seed % 5 : 0, seed: instance.seed, variant: instance.variant, action: 'idle', facing: 'right' }, instance.scale / detailStep, flying);
+        place(ids, compiled, instance.x + (flying ? Math.sin(time * .7 + instance.seed) * 6 : 0), instance.y, flying ? LAYER.effect : LAYER.prop, !flying, flying ? -Math.cos(time * .9 + instance.seed) * 3 : 0);
       } });
     }
+    seeThrough = { x: cellX(hero.x, hero.y), y: cellY(hero.x, hero.y) - (mounted ? 32 : 20) / detailStep, rx: (mounted ? 34 : 20) / detailStep, ry: (mounted ? 40 : 30) / detailStep };
     const actorOptions = { time, seed: 17, variant: hero.variant, action: hero.moving ? 'walk' as const : 'idle' as const, facing: hero.facing };
-    draws.push({ y: horse.y, draw: () => {
+    draws.push({ ...at(horse.x, horse.y), draw: () => {
       shadow(ids, horse.x, horse.y, 24, 3);
-      place(ids, assetCache.get(HORSE, { ...actorOptions, seed: 31, variant: 0, action: mounted && hero.moving ? 'walk' : 'idle', facing: horse.facing }, .48 / detailStep, true), horse.x, horse.y, LAYER.actor); // always an actor: prop base-darkening made its legs vanish (looked like floating)
-      if (mounted) place(ids, assetCache.get(playable[playerIndex], { ...actorOptions, action: 'sit' as const }, (playable[playerIndex].id.startsWith('dwarf') ? 30 : 41) / playable[playerIndex].height / detailStep, true), hero.x - (hero.facing === 'right' ? 2 : -2), hero.y - 15 + (hero.moving ? Math.abs(Math.sin(time * 6)) * .6 : 0), LAYER.actor, false);
+      place(ids, sprite(HORSE, { ...actorOptions, seed: 31, variant: 0, action: mounted && hero.moving ? 'walk' : 'idle', facing: horse.facing }, .48 / detailStep, true), horse.x, horse.y, LAYER.actor); // always an actor: prop base-darkening made its legs vanish (looked like floating)
+      if (mounted) place(ids, sprite(playable[playerIndex], { ...actorOptions, action: 'sit' as const }, (playable[playerIndex].id.startsWith('dwarf') ? 30 : 41) / playable[playerIndex].height / detailStep, true), hero.x - (hero.facing === 'right' ? 2 : -2), hero.y, LAYER.actor, false, 15 - (hero.moving ? Math.abs(Math.sin(time * 6)) * .6 : 0));
     } });
     // Townsfolk and carts walking the streets (positions are a pure function of time).
     const viewRight = cameraX + cols * detailStep; const viewBottom = cameraY + rows * detailStep;
     // Wildlife (Agent F): herds, birds, butterflies, fireflies around the camera.
-    wildlife.update(paused ? 0 : dt, cameraX, cameraY, cols * detailStep, rows * detailStep, hero, dayFactor() < .35);
+    wildlife.update(paused ? 0 : dt, viewWorld.x, viewWorld.y, viewWorld.w, viewWorld.h, hero, dayFactor() < .35);
     for (const animal of wildlife.animals) {
       const asset = ASSET_BY_ID.get(animal.assetId);
       if (!asset) continue;
       const airborne = animal.z > 0;
-      draws.push({ y: animal.y - animal.z, draw: () => {
+      // Herds graze in the countryside, never in the streets.
+      if (!airborne && LANDMARKS.some(r => (r.id === 'town' || r.id === 'village' || r.id === 'outskirts') && Math.hypot(animal.x - r.x, animal.y - r.y) < (r.id === 'town' ? 260 : 150))) continue;
+      draws.push({ ...at(animal.x, animal.y), draw: () => {
         if (!airborne) shadow(ids, animal.x, animal.y, 8 * animal.scale / .3, 2);
-        place(ids, assetCache.get(asset, { time: time + animal.seed % 5, seed: animal.seed, variant: animal.variant, facing: animal.facing, action: animal.action }, animal.scale / detailStep, true),
-          animal.x, animal.y - animal.z, airborne ? LAYER.effect : LAYER.actor, !airborne);
-        if (asset.id === 'firefly') renderer.addLight(cols, rows, (animal.x - cameraX) / detailStep, (animal.y - animal.z - cameraY) / detailStep, 4, .6, 1, .2);
+        place(ids, sprite(asset, { time: time + animal.seed % 5, seed: animal.seed, variant: animal.variant, facing: animal.facing, action: animal.action }, animal.scale / detailStep, true),
+          animal.x, animal.y, airborne ? LAYER.effect : LAYER.actor, !airborne, animal.z);
+        if (asset.id === 'firefly') light(animal.x, animal.y, animal.z, 4, .6, 1, .2);
       } });
     }
     for (const mover of MOVERS) {
       const asset = ASSET_BY_ID.get(mover.assetId);
       if (!asset) continue;
       const state = moverAt(mover, time);
-      if (state.x < cameraX - 80 || state.x > viewRight + 80 || state.y < cameraY - 10 || state.y - 60 > viewBottom) continue;
+      const msx = toScreenX(state.x, state.y); const msy = toScreenY(state.x, state.y);
+      if (msx < cameraX - 80 || msx > viewRight + 80 || msy < cameraY - 10 || msy - 60 > viewBottom) continue;
       const options = { time: time + mover.offset * 7, seed: 41, variant: mover.variant, action: state.moving ? 'walk' as const : 'idle' as const, facing: state.facing };
       if (mover.kind === 'walker') {
-        draws.push({ y: state.y, draw: () => {
+        draws.push({ ...at(state.x, state.y), draw: () => {
           shadow(ids, state.x, state.y, 9, 2);
-          place(ids, assetCache.get(asset, options, mover.scale / detailStep, true), state.x, state.y, LAYER.actor);
+          place(ids, sprite(asset, options, mover.scale / detailStep, true), state.x, state.y, LAYER.actor);
         } });
       } else {
         // A small horse pulls the cart; the horse walks ahead in the travel direction.
         const ahead = state.facing === 'right' ? 34 : -34;
-        draws.push({ y: state.y, draw: () => {
+        draws.push({ ...at(state.x, state.y), draw: () => {
           shadow(ids, state.x, state.y, 20, 3);
           // Driver first, a little behind the cart, so the cart hides the legs and they read as seated.
           const driver = ASSET_BY_ID.get(mover.driver ?? 'peasant');
-          if (driver) place(ids, assetCache.get(driver, { ...options, action: 'idle', facing: state.facing }, .34 / detailStep, true), state.x + (state.facing === 'right' ? 6 : -6), state.y - 9, LAYER.actor, false);
-          place(ids, assetCache.get(asset, { ...options, action: 'idle' }, mover.scale / detailStep, true), state.x, state.y, LAYER.actor);
+          if (driver) place(ids, sprite(driver, { ...options, action: 'idle', facing: state.facing }, .34 / detailStep, true), state.x + (state.facing === 'right' ? 6 : -6), state.y, LAYER.actor, false, 9);
+          place(ids, sprite(asset, { ...options, action: 'idle' }, mover.scale / detailStep, true), state.x, state.y, LAYER.actor);
           shadow(ids, state.x + ahead, state.y + 1, 16, 2.5);
-          place(ids, assetCache.get(HORSE, { ...options, seed: 33 }, .3 / detailStep, true), state.x + ahead, state.y + 1, LAYER.actor);
+          place(ids, sprite(HORSE, { ...options, seed: 33 }, .3 / detailStep, true), state.x + ahead, state.y + 1, LAYER.actor);
         } });
       }
     }
-    if (!mounted) draws.push({ y: hero.y, draw: () => {
+    if (!mounted) draws.push({ ...at(hero.x, hero.y), draw: () => {
       shadow(ids, hero.x, hero.y, 11, 2.5);
       const asset = playable[playerIndex];
-      place(ids, assetCache.get(asset, actorOptions, (asset.id.startsWith('dwarf') ? 30 : 41) / asset.height / detailStep, true), hero.x, hero.y, LAYER.actor);
+      place(ids, sprite(asset, actorOptions, (asset.id.startsWith('dwarf') ? 30 : 41) / asset.height / detailStep, true), hero.x, hero.y, LAYER.actor);
     } });
     draws.sort((a, b) => a.y - b.y).forEach(item => item.draw());
     // Lights: lanterns glow at all times and dominate at night; the hero carries a faint light after dusk.
     const night = 1 - dayFactor();
     for (const lamp of lanterns) {
-      const light = lamp.asset.light;
       const glow = .35 + night;
-      if (!light) { renderer.addLight(cols, rows, (lamp.x - cameraX) / detailStep, (lamp.y - 6 - cameraY) / detailStep, (34 + night * 26) / detailStep, .95 * glow, .58 * glow, .24 * glow); continue; }
-      const [r, g, b] = light.color;
-      renderer.addLight(cols, rows, (lamp.x + light.x * lamp.scale - cameraX) / detailStep, (lamp.y + light.y * lamp.scale - cameraY) / detailStep, light.radius * lamp.scale * (.7 + night * .5) / detailStep, r * glow, g * glow, b * glow);
+      if (!lamp.asset.light) { light(lamp.x, lamp.y, 6, (34 + night * 26) / detailStep, .95 * glow, .58 * glow, .24 * glow); continue; }
+      const src = lamp.asset.light;
+      const [r, g, b] = src.color;
+      // Light offsets are sprite-space: x along the screen, y up the sprite.
+      renderer.addLight(cols, rows, cellX(lamp.x, lamp.y) + src.x * lamp.scale / detailStep, cellY(lamp.x, lamp.y) + src.y * lamp.scale / detailStep, src.radius * lamp.scale * (.7 + night * .5) / detailStep, r * glow, g * glow, b * glow);
     }
-    if (night > .35) renderer.addLight(cols, rows, (hero.x - cameraX) / detailStep, (hero.y - 18 - cameraY) / detailStep, 46 / detailStep, .35 * night, .3 * night, .22 * night);
+    if (night > .35) light(hero.x, hero.y, 18, 46 / detailStep, .35 * night, .3 * night, .22 * night);
     // Firelight from burning buildings.
-    for (const fl of weather.lights(time)) renderer.addLight(cols, rows, (fl.x - cameraX) / detailStep, (fl.y - cameraY) / detailStep, fl.radius / detailStep, 1.15 * fl.strength, .55 * fl.strength, .2 * fl.strength);
+    for (const fl of weather.lights(time)) light(fl.x, fl.y, 0, fl.radius / detailStep, 1.15 * fl.strength, .55 * fl.strength, .2 * fl.strength);
     const generationEnd = performance.now();
     atmosphere.rain = 0; // replaced by particle weather
-    atmosphere.render(ids, cols, rows, cameraX, cameraY, detailStep, time);
+    atmosphere.render(ids, cols, rows, cameraX, cameraY, detailStep, time,
+      (x, y) => [cellX(x, y), cellY(x, y)], viewWorld.y, viewWorld.y + viewWorld.h);
     if (!paused) weather.update(dt, cameraX, cameraY, cols * detailStep, rows * detailStep);
     weather.draw(ids, renderer.layers, cols, rows, cameraX, cameraY, detailStep);
     canvas.dataset.atmosMs = (performance.now() - generationEnd).toFixed(1);

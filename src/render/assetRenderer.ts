@@ -193,7 +193,8 @@ export class AssetRenderer {
   }
 
   /** Stamp a sprite. With `groundY` (the row its feet touch) it casts a projected shadow. */
-  stamp(target: Uint32Array, cols: number, rows: number, sprite: GlyphSprite, x: number, y: number, layer: number = LAYER.prop, groundY?: number): void {
+  stamp(target: Uint32Array, cols: number, rows: number, sprite: GlyphSprite, x: number, y: number, layer: number = LAYER.prop, groundY?: number,
+    hole?: { x: number; y: number; rx: number; ry: number }): void {
     x = Math.round(x); y = Math.round(y);
     const minX = Math.max(0, -x); const maxX = Math.min(sprite.width, cols - x);
     const minY = Math.max(0, -y); const maxY = Math.min(sprite.height, rows - y);
@@ -203,7 +204,13 @@ export class AssetRenderer {
       const dst = (y + sy) * cols + x;
       for (let sx = minX; sx < maxX; sx++) {
         const id = sprite.ids[src + sx];
-        if (id) { target[dst + sx] = id; if (layers) layers[dst + sx] = layer; }
+        if (!id) continue;
+        if (hole) {
+          // See-through window: fully open in the middle, dithered toward the rim.
+          const d = ((x + sx - hole.x) / hole.rx) ** 2 + ((y + sy - hole.y) / hole.ry) ** 2;
+          if (d < .55 || (d < 1 && ((x + sx + y + sy) & 1))) continue;
+        }
+        target[dst + sx] = id; if (layers) layers[dst + sx] = layer;
       }
     }
     if (groundY === undefined || !layers || this.lighting.sun < .04) return;

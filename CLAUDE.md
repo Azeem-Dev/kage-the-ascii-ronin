@@ -75,9 +75,12 @@ rendered through a GPU ASCII shader), shipped to web via Vite and to iOS/Android
 chunks/regions, colliders and `src/engine/` physics (already x/y/z). Replace: the
 renderer and 2D glyph sprites (characters become low-poly models or billboards).
 **Update (same day): the owner rejected the 3D look** ("blurred", "things look stupid",
-"the 2D was very good"). The 2D glyph game is the default at `/` again. The 3D experiment
-stays at `?mode=3d` (`src/three/`), parked: crude box/cone models plus a blurry ASCII
-shader lost the hand-made glyph art. Don't make 3D the default without the owner's say-so.
+"the 2D was very good"). A second try (perspective camera over the glyph renderer) was also
+rejected ("things look very shitty"): flat sprites don't survive a perspective camera.
+**Both 3D experiments were deleted (2026-11-25).** The owner chose **isometric 2.5D**, now the
+default at `/` (`src/game/view.ts`; `?view=top` = old top-down). Buildings are drawn as
+isometric boxes with walls and roofs (`src/assets/isoBuildings.ts`); scenery in front of the
+hero gets a see-through window. Don't start another 3D attempt without the owner asking.
 Mobile: touch controls (joystick / tap-to-move), quality levels, 30–60 FPS on mid phones.
 Story and hero (a samurai): `docs/STORY.md`.
 

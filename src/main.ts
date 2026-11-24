@@ -222,7 +222,6 @@ function bootstrap(): void {
 window.addEventListener('DOMContentLoaded', () => {
   const mode = new URLSearchParams(window.location.search).get('mode');
   if (mode === 'game') bootstrap();
-  // The 2D glyph game is the default (owner preferred it); the 3D experiment is at ?mode=3d.
-  else if (mode === '3d') void import('./three/game3d.ts').then(m => m.start3d());
+  // The isometric glyph game is the default; ?view=top keeps the old top-down view.
   else startRiverScene();
 });

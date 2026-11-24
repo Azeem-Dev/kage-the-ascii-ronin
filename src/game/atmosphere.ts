@@ -25,7 +25,10 @@ export class Atmosphere {
   update(dt: number): void { if (this.cycle) this.daylight = (this.daylight + dt / 300) % 1; }
   get brightness(): number { return .86 + (Math.sin(this.daylight * Math.PI * 2) * .5 + .5) * .6; }
 
-  render(ids: Uint32Array, cols: number, rows: number, cameraX: number, cameraY: number, step: number, time: number): void {
+  /** `toCell` maps a world point to a cell (default: top-down camera); `worldTop/worldBottom`
+   * bound the world rows that can be on screen (the isometric view sees a taller band). */
+  render(ids: Uint32Array, cols: number, rows: number, cameraX: number, cameraY: number, step: number, time: number,
+    toCell?: (x: number, y: number) => [number, number], worldTop = cameraY, worldBottom = cameraY + rows * step): void {
     const g = this.ids;
     const layers = this.renderer.layers.length === ids.length ? this.renderer.layers : null;
     const put = (x: number, y: number, id: number) => {
@@ -34,20 +37,21 @@ export class Atmosphere {
     };
     // Analytic downstream advection. Trails travel with the river's changing
     // centerline instead of swapping symbols in stationary screen locations.
-    const first = Math.floor(cameraY / 512) - 1;
-    const last = Math.floor((cameraY + rows * step) / 512) + 1;
+    const first = Math.floor(worldTop / 512) - 1;
+    const last = Math.floor(worldBottom / 512) + 1;
     for (let block = first; block <= last; block++) for (let i = 0; i < 96; i++) {
       // Each foam streak has its own speed, start and length, and wanders across the current,
       // so streaks never move as one evenly spaced grid.
       const speed = 12 + noise(i, block, 118) * 16;
       const y = block * 512 + ((noise(i, block, 119) * 512 + time * speed) % 512);
-      if (y < cameraY - 10 || y > cameraY + rows * step + 10) continue;
+      if (y < worldTop - 10 || y > worldBottom + 10) continue;
       const lane = (noise(i, block, 117) - .5) * 1.65 + Math.sin(time * .3 + i * 1.3) * .08;
       const tails = 2 + Math.floor(noise(i, block, 120) * 4);
       for (let tail = 0; tail < tails; tail++) {
         const py = y - tail * 1.4;
         const px = riverCenter(py) + lane * riverWidth(py) + Math.sin(py * .11 + i * 2.3) * (.8 + noise(i, block, 121) * 1.6);
-        put((px - cameraX) / step, (py - cameraY) / step, tail === 0 ? (i % 3 ? g.crest : g.crestAlt) : tail < 3 ? g.mid : g.tail);
+        const [cx, cy] = toCell ? toCell(px, py) : [(px - cameraX) / step, (py - cameraY) / step];
+        put(cx, cy, tail === 0 ? (i % 3 ? g.crest : g.crestAlt) : tail < 3 ? g.mid : g.tail);
       }
     }
     for (let i = 0; i < (this.rain === 2 ? 230 : this.rain === 1 ? 75 : 0); i++) {

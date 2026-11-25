@@ -322,14 +322,19 @@ export class AssetRenderer {
     // column). Drives volume shading: dark at the foot, lit toward the top.
     if (this.height.length !== n) this.height = new Uint8Array(n);
     const height = this.height;
-    for (let x = 0; x < cols; x++) {
-      let run = 0;
-      for (let y = rows - 1; y >= 0; y--) {
-        const i = y * cols + x; const l = layers[i];
-        run = l === LAYER.prop || l === LAYER.actor ? Math.min(255, run + 1) : 0;
-        height[i] = run;
+    // Row-major from the bottom row up (cache-friendly; same result as a per-column run).
+    const PROP = LAYER.prop; const ACTOR = LAYER.actor;
+    for (let x = 0, i = (rows - 1) * cols; x < cols; x++, i++) { const l = layers[i]; height[i] = l === PROP || l === ACTOR ? 1 : 0; }
+    for (let y = rows - 2; y >= 0; y--) {
+      const row = y * cols;
+      for (let x = 0; x < cols; x++) {
+        const i = row + x; const l = layers[i];
+        if (l === PROP || l === ACTOR) { const r = height[i + cols] + 1; height[i] = r > 255 ? 255 : r; } else height[i] = 0;
       }
     }
+    const fgOut = this.fg; const bgOut = this.bg;
+    const lightR = this.lightR; const lightG = this.lightG; const lightB = this.lightB;
+    const bg0 = BG[0] / 255 * .5; const bg1 = BG[1] / 255 * .5; const bg2 = BG[2] / 255 * .5;
 
     for (let y = 0; y < rows; y++) {
       // Atmospheric depth: the top of the screen is farther away, hazier and darker.
@@ -370,7 +375,7 @@ export class AssetRenderer {
       if (layer !== LAYER.actor) { lr *= depth; lg *= depth; lb *= depth; }
       lr += sun * sr; lg += sun * sg; lb += sun * sb;
       // Overlapping lamps/fire cannot stack into an unlimited white exposure.
-      if (lights) { lr += Math.min(1.25, this.lightR[i]); lg += Math.min(1.25, this.lightG[i]); lb += Math.min(1.25, this.lightB[i]); }
+      if (lights) { const qr = lightR[i]; const qg = lightG[i]; const qb = lightB[i]; lr += qr < 1.25 ? qr : 1.25; lg += qg < 1.25 ? qg : 1.25; lb += qb < 1.25 ? qb : 1.25; }
 
       // Background: the ground material under everything that is not a solid object.
       let bgDef = defs[layer === LAYER.prop || layer === LAYER.actor ? ids[i] : under[i]];
@@ -407,8 +412,8 @@ export class AssetRenderer {
       br = blum + (br - blum) * sat; bgg = blum + (bgg - blum) * sat; bb = blum + (bb - blum) * sat;
       // Unlit glyphs drop out, leaving dark negative space in shadow and at night.
       if (lum < .045) mask = 0;
-      this.fg[i] = mask ? (mask << 15) | (q5(fr) << 10) | (q5(fgc) << 5) | q5(fb) : 0;
-      this.bg[i] = bgFactor ? (q5(br + BG[0] / 255 * .5) << 10) | (q5(bgg + BG[1] / 255 * .5) << 5) | q5(bb + BG[2] / 255 * .5) : bgEmpty;
+      fgOut[i] = mask ? (mask << 15) | (q5(fr) << 10) | (q5(fgc) << 5) | q5(fb) : 0;
+      bgOut[i] = bgFactor ? (q5(br + bg0) << 10) | (q5(bgg + bg1) << 5) | q5(bb + bg2) : bgEmpty;
       }
     }
   }

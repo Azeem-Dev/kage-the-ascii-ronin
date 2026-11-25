@@ -454,7 +454,12 @@ export function startRiverScene(): void {
       draws.push({
         ...at(animal.x, animal.y), draw: () => {
           if (!airborne) shadow(ids, animal.x, animal.y, 8 * animal.scale / .3, 2);
-          place(ids, sprite(asset, { time: time + animal.seed % 5, seed: animal.seed, variant: animal.variant, facing: animal.facing, action: animal.action }, animal.scale / detailStep, true),
+          // Shared, looping frames: unique seeds and free-running time gave every animal its own
+          // ~100 cached frames and thrashed the sprite cache (the main cause of slow frames).
+          // Idle = one frame, flying = 8-frame wing loop, walking/running = 16-frame loop.
+          const t8 = Math.floor((time + animal.seed % 5) * 8);
+          const animT = animal.action === 'idle' ? 0 : (t8 % (animal.action === 'fly' ? 8 : 16)) / 8;
+          place(ids, sprite(asset, { time: animT, seed: animal.seed & 1, variant: animal.variant, facing: animal.facing, action: animal.action }, animal.scale / detailStep, true),
             animal.x, animal.y, airborne ? LAYER.effect : LAYER.actor, !airborne, animal.z);
           if (asset.id === 'firefly') light(animal.x, animal.y, animal.z, 4, .6, 1, .2);
         }

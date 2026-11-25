@@ -31,6 +31,9 @@ export interface AsciiAsset {
   /** Optional renderer that draws straight at the final on-screen scale (cells per source unit),
    * so detail is sampled, not averaged down. Cells are in the scaled grid; anchor = round(anchor * scale). */
   generateAt?: (options: AssetOptions, scale: number) => { cells: AsciiCell[]; width: number; height: number };
+  /** Optional cache key for the pose actually drawn (e.g. a quantised walk step). Assets whose
+   * output repeats across many times/seeds use it so every instance shares one cached sprite. */
+  poseKey?: (options: AssetOptions) => string;
   /** Optional ground footprint in asset-local cells, relative to the anchor
    * (x right, y down). Each circle blocks movement once scaled into the world. */
   footprint?: readonly { x: number; y: number; radius: number }[];

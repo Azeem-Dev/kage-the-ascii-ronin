@@ -234,3 +234,11 @@ export function setPersonModelRenderer(fn: PersonModelRenderer | null): void { m
 export function personModel(sp: BodySpec, o: AssetOptions, sizeSpec: BodySpec, scale: number) {
   return modelRenderer?.(sp, o, sizeSpec, scale) ?? personAt(sp, o, sizeSpec, scale);
 }
+
+/** The pose the person renderers actually draw for these options (12 walk/run steps, 8 idle
+ * breaths, 4 seed variants). Shared by every NPC in that pose, so the sprite cache stays small. */
+export function personPoseKey(o: AssetOptions): string {
+  const walking = o.action === 'walk' || o.action === 'run';
+  const step = walking ? Math.round(o.time * (o.action === 'run' ? 8.2 : 6.5) / (Math.PI * 2) * 12) % 12 : Math.round(o.time * 2.9 / (Math.PI * 2) * 8) % 8;
+  return `${o.action}${step}s${o.seed & 3}`;
+}

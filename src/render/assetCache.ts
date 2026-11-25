@@ -13,7 +13,10 @@ export class AssetCache {
   get(asset: AsciiAsset, options: AssetOptions, scale: number, animated = false): PlacedSprite {
     // Common 4pi cycle preserves the half/integer frequencies used by actors.
     const frame = animated ? Math.floor((options.time % (Math.PI * 4)) * 8) : 0;
-    const key = `${asset.id}:${asset.version}:${options.seed}:${options.variant}:${options.action}:${options.facing}:${scale}:${frame}`;
+    const pose = asset.poseKey?.({ ...options, time: frame / 8 });
+    const key = pose !== undefined
+      ? `${asset.id}:${asset.version}:${options.variant}:${options.facing}:${scale}:p${pose}`
+      : `${asset.id}:${asset.version}:${options.seed}:${options.variant}:${options.action}:${options.facing}:${scale}:${frame}`;
     const entries = animated ? this.animatedEntries : this.entries;
     const cached = entries.get(key);
     if (cached) {
@@ -27,7 +30,7 @@ export class AssetCache {
       anchorX: Math.round((options.facing === 'left' ? asset.width - 1 - asset.anchor.x : asset.anchor.x) * scale),
       anchorY: Math.round(asset.anchor.y * scale),
     };
-    if (entries.size >= (animated ? 2048 : 1024)) entries.delete(entries.keys().next().value!);
+    if (entries.size >= (animated ? 12000 : 2048)) entries.delete(entries.keys().next().value!);
     entries.set(key, entry);
     return entry;
   }

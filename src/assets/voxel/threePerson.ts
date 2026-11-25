@@ -17,7 +17,7 @@ import { chooseGlyph } from './asciiGlyphs.ts';
  */
 
 const SS = 3;                       // supersampling per final cell
-const POSE_CACHE_LIMIT = 240;
+const POSE_CACHE_LIMIT = 1600;
 const MATERIAL_CACHE_LIMIT = 160;
 
 let renderer: THREE.WebGLRenderer | null = null;
@@ -541,6 +541,14 @@ export function threePersonAt(sp: BodySpec, o: AssetOptions, sizeSpec: BodySpec,
   return { cells, width: W, height: Hc };
 }
 
+const specIds = new WeakMap<BodySpec, number>();
+let nextSpecId = 1;
+function specId(sp: BodySpec): number {
+  let id = specIds.get(sp);
+  if (id === undefined) { id = nextSpecId++; specIds.set(sp, id); }
+  return id;
+}
+
 const poseMemo = new Map<string, { cells: AsciiCell[]; width: number; height: number }>();
 
 /** Cached, pose-quantised render (12 walk steps, 8 idle breaths). Null when WebGL is unavailable. */
@@ -548,9 +556,11 @@ export function personModelAt(sp: BodySpec, o: AssetOptions, sizeSpec: BodySpec,
   const walking = o.action === 'walk' || o.action === 'run';
   const step = walking ? Math.round(o.time * (o.action === 'run' ? 8.2 : 6.5) / (Math.PI * 2) * 12) % 12 : Math.round(o.time * 2.9 / (Math.PI * 2) * 8) % 8;
   const q: AssetOptions = { ...o, time: walking ? step / 12 * Math.PI * 2 / (o.action === 'run' ? 8.2 : 6.5) : step / 8 * Math.PI * 2 / 2.9 };
-  // Include the complete body/size specs: concatenated colour strings collided
-  // between outfits, and omitting plates/trim/belts reused the wrong model.
-  const key = JSON.stringify([sp, sizeSpec, o.seed, o.variant, o.facing, o.action, step, scale]);
+  // Body specs are stable objects, so identity is an exact and cheap key (string keys collided
+  // between outfits; JSON.stringify per person per frame was slow). The seed only varies rag and
+  // patch details, so four values are enough and NPCs share cached poses.
+  q.seed = o.seed & 3;
+  const key = `${specId(sp)}|${specId(sizeSpec)}|${q.seed}|${o.facing}|${o.action}|${step}|${scale.toFixed(3)}`;
   const hit = poseMemo.get(key);
   if (hit) { poseMemo.delete(key); poseMemo.set(key, hit); return hit; }
   const out = threePersonAt(sp, q, sizeSpec, scale);

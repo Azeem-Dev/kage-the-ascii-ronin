@@ -12,7 +12,13 @@ CC0, OpenGameArt CC0, or a CC0 Mixamo-compatible base — confirm the licence on
 and dress them for a feudal-Japan-inspired world (kimono/hakama, straw hats, armour plates,
 katana, spears). Primitive meshes attached to bones are fine where no model exists.
 
-Current actors: KayKit `Rogue_Hooded` hero (WASD, Shift run, Walking_A/Running_A/Idle), a Knight
+Stopgap already in `actors.ts` (`dressSamurai`, by Claude): the KayKit Knight with the helmet
+hidden, recoloured, head bone shrunk to 62%, legs ×1.7 / arms ×1.3 via bone scale, a code-built
+straw hat on the head bone, a katana at the belt, and a light pool that follows him. It reads as
+"hat + blade" in ASCII but the body is still a stretched chibi. Replace it with a properly
+proportioned CC0 model; keep the hat/katana/light ideas if they help.
+
+Current actors (before the stopgap): KayKit `Rogue_Hooded` hero (WASD, Shift run, Walking_A/Running_A/Idle), a Knight
 walking a circle, a Barbarian and a Mage standing, and a static three.js example horse
 (licence unconfirmed — must go).
 

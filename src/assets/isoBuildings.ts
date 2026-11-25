@@ -1,3 +1,4 @@
+import { voxelHouse } from './voxel/voxelHouse.ts';
 import { noise, type AsciiAsset, type AsciiCell, type AssetOptions } from './types.ts';
 
 /**
@@ -33,7 +34,7 @@ export interface HouseTextures {
   roof: (X: number, Y: number, back: boolean) => [string, string];
 }
 
-function variantPalette(s: IsoHouseSpec, variant: number): IsoHouseSpec {
+export function variantPalette(s: IsoHouseSpec, variant: number): IsoHouseSpec {
   const v = ((Math.floor(variant) % 3) + 3) % 3;
   if (v === 0) return s;
   if (s.id === 'iso-townhouse') {
@@ -111,84 +112,6 @@ export function houseTextures(s: IsoHouseSpec): HouseTextures {
     return [(Math.floor(X) + row * 2) % 4 === 0 ? '|' : row % 2 ? '=' : '#', hex(s.roof, light + (row % 2) * .06)];
   };
   return { facade, roof: roofCell };
-}
-
-function isoHouse(base: IsoHouseSpec): AsciiAsset {
-  const { a, b, wall: H, rise: R } = base;
-  const top = Math.ceil((a + b) / 3 + H + R) + 12;
-  const halfW = Math.ceil(a + b) + 5;
-  const width = halfW * 2 + 1;
-  const height = top + Math.ceil((a + b) / 3) + 4;
-
-  const generate = (o: AssetOptions): AsciiCell[] => {
-    const s = variantPalette(base, o.variant);
-    const { facade, roof: roofCell } = houseTextures(s);
-    const seed = o.seed + o.variant * 31;
-    const cells: AsciiCell[] = [];
-    const ruined = s.id === 'iso-hovel' && (o.variant % 3) === 1;
-    const chimX = a * .48; const chimY = -b * .38;
-
-    for (let cy = 0; cy < height; cy++) for (let cx = 0; cx < width; cx++) {
-      const sx = cx - halfW + .5; const sy = cy - top + .5;
-      let hit: [string, string] | null = null;
-      // Back roof slope
-      const backDen = 2 / 3 - R / b;
-      if (backDen > .05) {
-        const Y = (sy - sx / 3 + H + R) / backDen; const X = sx + Y;
-        if (Y >= -b - 3 && Y <= 0 && X >= -a - 3 && X <= a + 3) {
-          if (!ruined || noise(Math.floor(X / 4), Math.floor(Y / 3), seed + 5) > .25) hit = roofCell(X, Y, true);
-        }
-      }
-      // Stone chimney rising above back roof
-      if (s.id !== 'iso-hovel') {
-        const cX = sx - chimY; const cZ = (chimX + chimY) / 3 - sy;
-        if (Math.abs(cX - chimX) <= 3.5 && cZ >= H + R * .4 && cZ <= H + R + 10) {
-          hit = [Math.floor(cZ) % 3 === 0 ? '=' : '#', hex(s.stone, cZ > H + R + 8 ? 1.15 : .88)];
-        }
-      }
-      // Side wall + gable (world +X face)
-      {
-        const Y = a - sx; const z = (a + Y) / 3 - sy;
-        const gable = H + R * (1 - Math.abs(Y) / b);
-        if (Y >= -b && Y <= b && z >= 0 && z <= gable) {
-          const gCol = z <= H ? facade(Y + b, z, 2 * b, seed + 31, false)! : (Math.hypot(Y, z - H - R * .45) < 3.5 ? ['o', s.window] : ['=', s.plaster]);
-          // AssetRenderer.shade already dims the shadow-facing side; keep .82 so it stays readable at night.
-          hit = [gCol[0], hex(gCol[1], .82)];
-        }
-      }
-      // Front wall (world +Y face)
-      {
-        const X = sx + b; const z = (X + b) / 3 - sy;
-        if (X >= -a && X <= a && z >= 0 && z <= H) {
-          if (!ruined || X < a * .45 || z < H * .65 || noise(Math.floor(X / 3), Math.floor(z / 3), seed + 9) > .35) {
-            hit = facade(X + a, z, 2 * a, seed + 13, true);
-          }
-        }
-      }
-      // Front roof slope
-      {
-        const Y = (sy - sx / 3 + H + R) / (2 / 3 + R / b); const X = sx + Y;
-        if (Y >= 0 && Y <= b + 3.5 && X >= -a - 3 && X <= a + 3) {
-          if (!ruined || X < a * .35 || noise(Math.floor(X / 4), Math.floor(Y / 3), seed + 19) > .28) hit = roofCell(X, Y, false);
-        }
-      }
-      if (hit) cells.push({ x: cx, y: cy, glyph: hit[0], color: hit[1] });
-    }
-    return cells;
-  };
-
-  const footprint: { x: number; y: number; radius: number }[] = [];
-  for (let x = -a + b * .6; x <= a - b * .6 + .01; x += b * .6) footprint.push({ x, y: 0, radius: b * .88 });
-
-  return {
-    id: base.id, version: 2, name: base.name, category: 'Prop',
-    description: `Isometric ${base.name.toLowerCase()} for the 2.5D view.`,
-    width, height, anchor: { x: halfW, y: top },
-    variants: ['Standard', 'Weathered', 'Warm'],
-    generate,
-    footprint,
-    light: base.id === 'iso-hovel' ? undefined : { x: 0, y: -Math.round(H * .4), radius: Math.round((a + b) * 1.15), color: [1, .64, .28] },
-  };
 }
 
 // ------------------------------------------------------------------ Isometric settlement props
@@ -331,7 +254,7 @@ export const HOUSE_SPECS: Readonly<Record<string, IsoHouseSpec>> = {
 };
 
 export const ISO_BUILDINGS: Readonly<Record<string, AsciiAsset>> = {
-  ...Object.fromEntries(Object.entries(HOUSE_SPECS).map(([k, s]) => [k, isoHouse(s)])),
+  ...Object.fromEntries(Object.entries(HOUSE_SPECS).map(([k, s]) => [k, voxelHouse(s, variantPalette)])),
   'market-stall': isoPropAsset('iso-market-stall', 'Market stall', 84, 76, 42, 60, ['Red-white', 'Blue-white', 'Green-yellow'],
     [{ x: -16, y: 0, radius: 11 }, { x: 0, y: 0, radius: 11 }, { x: 16, y: 0, radius: 11 }], isoMarketStall),
   fence: isoPropAsset('iso-fence', 'Fence segment', 56, 38, 28, 28, ['Wooden', 'Wattle', 'Iron'],

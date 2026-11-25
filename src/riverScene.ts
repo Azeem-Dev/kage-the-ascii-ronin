@@ -63,7 +63,7 @@ export function startRiverScene(): void {
   let mudgateLit = false; const keys = new Set<string>();
   const playable = [RONIN, ...CHARACTERS];
   let playerIndex = 0;
-  const hero = { x: 770, y: -22, vx: 0, vy: 0, facing: 'right' as 'left' | 'right', moving: false, variant: 0 };
+  const hero = { x: 900, y: 250, vx: 0, vy: 0, facing: 'right' as 'left' | 'right', moving: false, variant: 0 };
   const horse = { x: hero.x + 27, y: hero.y + 16, facing: 'right' as 'left' | 'right' };
   let mounted = false;
   let zoom = CONFIG.exploration.defaultZoom;
@@ -217,7 +217,7 @@ export function startRiverScene(): void {
       if (mounted) { mounted = false; hero.x = horse.x; hero.y = horse.y + 10; }
       else if (Math.hypot(hero.x - horse.x, hero.y - horse.y) < 36) { mounted = true; hero.x = horse.x; hero.y = horse.y; target = null; }
     }
-    if (event.code === 'KeyR') { hero.x = 770; hero.y = -22; hero.vx = 0; hero.vy = 0; horse.x = hero.x + 27; horse.y = hero.y + 16; mounted = false; target = null; zoom = CONFIG.exploration.defaultZoom; size(); }
+    if (event.code === 'KeyR') { hero.x = 900; hero.y = 250; hero.vx = 0; hero.vy = 0; horse.x = hero.x + 27; horse.y = hero.y + 16; mounted = false; target = null; zoom = CONFIG.exploration.defaultZoom; size(); }
     if (['Minus', 'NumpadSubtract', 'Equal', 'NumpadAdd'].includes(event.code)) {
       zoom = Math.max(CONFIG.exploration.minimumZoom, Math.min(CONFIG.exploration.maximumZoom, zoom * (event.code === 'Minus' || event.code === 'NumpadSubtract' ? .8 : 1.25))); size();
     }
@@ -293,7 +293,7 @@ export function startRiverScene(): void {
         const iso = ISO ? ISO_BUILDINGS[prop.assetId] : undefined;
         if (iso) {
           const spec = HOUSE_SPECS[prop.assetId];
-          const scale = spec ? (prop.id.startsWith('town-') ? 1.15 : 1) : prop.assetId === 'market-stall' ? .72 : .85;
+          const scale = (spec ? (prop.id.startsWith('town-') ? 1.15 : 1) : prop.assetId === 'market-stall' ? .72 : .85) * .8;
           return [{ ...prop, asset: iso, scale, y: spec?.shiftBack ? prop.y - spec.b * .92 * scale : prop.y }];
         }
         // Keep oversized 300-cell trees and 230-cell lamp/banner poles proportional to the 41-cell hero.

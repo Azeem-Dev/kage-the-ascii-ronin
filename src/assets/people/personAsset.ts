@@ -1,4 +1,5 @@
-import { drawPerson, spec, type BodySpec } from './body.ts';
+import { spec, type BodySpec } from './body.ts';
+import { personCells, personSpriteSize } from '../voxel/voxelPerson.ts';
 import type { AsciiAsset } from '../types.ts';
 
 interface PersonAssetDefinition extends Pick<AsciiAsset, 'id' | 'name' | 'description' | 'variants'> {
@@ -27,20 +28,22 @@ export function personAsset(definition: PersonAssetDefinition): AsciiAsset {
     return body;
   });
 
+  const baseSpec = spec(base);
+  const size = personSpriteSize(baseSpec);
   return {
     id,
-    version: 1,
+    version: 2,
     name,
     category: 'Character',
     description,
-    width: base.W,
-    height: base.H,
-    anchor: { x: (base.W - 1) / 2, y: base.H - 1 },
+    width: size.width,
+    height: size.height,
+    anchor: size.anchor,
     variants,
     footprint: [{ x: 0, y: 0, radius: footprintRadius ?? Math.max(3, base.shoulder * .36) }],
     generate: options => {
       const index = ((Math.trunc(options.variant) % bodies.length) + bodies.length) % bodies.length;
-      return drawPerson(bodies[index], options);
+      return personCells(bodies[index], options, baseSpec);
     },
   };
 }

@@ -11,9 +11,9 @@ export interface GridDensityConfig {
 
 export const CONFIG = {
   exploration: {
-    defaultZoom: 0.8,
+    defaultZoom: 0.6,
     minimumZoom: 0.4,
-    maximumZoom: 1.8,
+    maximumZoom: 1.0,
     zoomSensitivity: 0.0016,
     walkSpeed: 22,
     runSpeed: 36,

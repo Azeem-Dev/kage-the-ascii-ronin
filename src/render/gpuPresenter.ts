@@ -65,6 +65,12 @@ export class GpuPresenter {
           vec4 f = texture2D(tFg, tc); vec4 b = texture2D(tBg, tc);
           vec4 info = texture2D(tInfo, tc);
           float mask = glyphMask(f, b, local);
+          // Ink follows light: dim cells keep only the strongest strokes, lit cells show the whole glyph.
+          // This gives shadows sparse glyphs and highlights dense ones, like a real ASCII shading ramp.
+          float inkLum = dot(f.rgb, vec3(.299, .587, .114));
+          float cover = clamp(inkLum * 1.9 + .2, 0., 1.);
+          float thr = (1. - cover) * .8;
+          mask = smoothstep(thr, thr + .22, mask);
           vec3 srgb = mix(b.rgb, f.rgb, mask);
           float layer = floor(info.r * 255. / 50. + .5);
           // Water: mirrored, rippling reflections of whatever stands above, plus a moon path.
@@ -113,6 +119,8 @@ export class GpuPresenter {
               else if (above2 < 1.5 || above2 > 2.5) srgb = mix(srgb, snowColor, snowCover * .5);
             }
           }
+          // Glyph strokes cover only part of a cell, so lift mid-tones to keep colours rich, not muddy.
+          srgb = pow(clamp(srgb, 0., 1.), vec3(.78)) * 1.12;
           // Lightning lights everything for an instant, strongest on what was already lit.
           srgb += flash * vec3(.5, .55, .68) * (.25 + dot(srgb, vec3(.333)));
           gl_FragColor = vec4(pow(srgb, vec3(2.2)), 1.);   // linear for bloom; OutputPass re-encodes

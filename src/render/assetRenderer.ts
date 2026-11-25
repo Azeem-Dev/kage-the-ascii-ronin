@@ -333,7 +333,7 @@ export class AssetRenderer {
 
     for (let y = 0; y < rows; y++) {
       // Atmospheric depth: the top of the screen is farther away, hazier and darker.
-      const depth = .72 + .28 * (y / rows);
+      const depth = .88 + .12 * (y / rows);
       for (let x = 0; x < cols; x++) {
       const i = y * cols + x;
       const layer = layers[i];
@@ -354,7 +354,7 @@ export class AssetRenderer {
         // Gradient over the full storey height so tall facades darken toward the street.
         const up = h < 36 ? h / 36 : 1;
         // Actors stay fully lit so they read as the subject, like the references.
-        let e = layer === LAYER.actor ? .15 : up * .5 - .35;
+        let e = layer === LAYER.actor ? .3 : up * .75 - .5;
         const lx = x + litSide; const fx = x - litSide;
         const above = y > 0 ? layers[i - cols] : 0;
         if (above !== LAYER.prop && above !== LAYER.actor) e += .55;
@@ -373,7 +373,7 @@ export class AssetRenderer {
 
       // Background: the ground material under everything that is not a solid object.
       let bgDef = defs[layer === LAYER.prop || layer === LAYER.actor ? ids[i] : under[i]];
-      let bgFactor = layer === LAYER.prop || layer === LAYER.actor ? .13 : .07;
+      let bgFactor = layer === LAYER.prop || layer === LAYER.actor ? .3 : .08;
       if (!bgDef || (bgDef.r === 0 && bgDef.g === 0 && bgDef.b === 0)) { bgDef = defs[0]; bgFactor = 0; }
 
       const id = ids[i];
@@ -385,7 +385,7 @@ export class AssetRenderer {
         // Ground recedes hard so lit objects and actors carry the picture.
         if (layer === LAYER.ground) {
           const gl = .299 * fr + .587 * fgc + .114 * fb;
-          fr = (gl + (fr - gl) * .55) * .36; fgc = (gl + (fgc - gl) * .55) * .36; fb = (gl + (fb - gl) * .55) * .36;
+          fr = (gl + (fr - gl) * .6) * .4; fgc = (gl + (fgc - gl) * .6) * .4; fb = (gl + (fb - gl) * .6) * .42;
         }
         if (layer === LAYER.effect) { fr = Math.max(fr, def.r * .95); fgc = Math.max(fgc, def.g * .95); fb = Math.max(fb, def.b * .95); }
         if (layer === LAYER.actor) {
@@ -393,11 +393,12 @@ export class AssetRenderer {
           // every costume to white, so NPCs read as ghosts.
           const al = .299 * fr + .587 * fgc + .114 * fb;
           fr = (al + (fr - al) * 1.35) * 1.12 + .02; fgc = (al + (fgc - al) * 1.35) * 1.12 + .02; fb = (al + (fb - al) * 1.35) * 1.12 + .02;
-          if (outline[i] === 2) { fr += .07; fgc += .065; fb += .055; }
+          if (outline[i] === 2) { fr += .1; fgc += .095; fb += .08; }
         }
       }
       let br = bgDef.r * lr * bgFactor; let bgg = bgDef.g * lg * bgFactor; let bb = bgDef.b * lb * bgFactor;
-      if (outline[i] === 1) { fr *= .1; fgc *= .1; fb *= .12; br *= .1; bgg *= .1; bb *= .12; }
+      if (layer === LAYER.prop && id) { fr *= 1.18; fgc *= 1.18; fb *= 1.18; }
+      if (outline[i] === 1) { fr *= .55; fgc *= .55; fb *= .6; br *= .5; bgg *= .5; bb *= .55; }
       // Saturation: the references are rich, not grey.
       let lum = .299 * fr + .587 * fgc + .114 * fb;
       fr = lum + (fr - lum) * sat; fgc = lum + (fgc - lum) * sat; fb = lum + (fb - lum) * sat;

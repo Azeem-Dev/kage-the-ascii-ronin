@@ -50,7 +50,12 @@ The current KayKit pack is chunky big-head cartoon medieval Europe: the owner re
 - Where no CC0 model exists, **build it from three.js primitives in code** (a torii, a stone
   lantern, a paper-wall house with a curved roof made of extruded shapes are all easy) — this is
   often better than a mismatched model.
-- KayKit models may remain only where they fit (rocks, barrels, crates, generic trees).
+- KayKit models may remain only where they fit (rocks, barrels, crates). **Not its trees: the
+  owner says "trees look bad"** (stacked green cones that become flat glyph triangles). Trees
+  need real silhouettes in ASCII: visible trunks and branches, broken leaf clusters with gaps the
+  moon shines through, varied shapes (Japanese black pine, cedar, maple, cherry, bamboo
+  clumps). A good option is to generate them in code (trunk/branch tubes + instanced leaf-card
+  clusters, seeded) so every tree differs; or a CC0 nature pack with that kind of shape.
 - Keep the models directory under ~60 MB; keep only files you use.
 
 ## 4. Look and light (coordinate with Agent I, who owns the ASCII pass)

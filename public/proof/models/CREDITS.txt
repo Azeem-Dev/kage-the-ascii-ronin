@@ -1,0 +1,8 @@
+Models used by the proof scene (/proof.html)
+
+hex/   KayKit : Medieval Hexagon Pack 1.0 by Kay Lousberg (www.kaylousberg.com) — CC0 1.0
+       https://github.com/KayKit-Game-Assets/KayKit-Medieval-Hexagon-Pack-1.0
+chars/ KayKit : Character Pack Adventures 1.0 by Kay Lousberg — CC0 1.0
+       https://github.com/KayKit-Game-Assets/KayKit-Character-Pack-Adventures-1.0
+three/ Horse.glb from the three.js examples (r170). Licence NOT confirmed as CC0 —
+       fine for a private proof; replace before any release.

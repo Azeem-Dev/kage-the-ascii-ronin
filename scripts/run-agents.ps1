@@ -10,8 +10,8 @@
   Claude can follow progress and review.
 #>
 param(
-  # Round 2 (art). Round 1 letters A-D still work if passed explicitly.
-  [string[]]$Agents = @('E', 'F', 'G', 'H'),
+  # Round 3 (3D models + ASCII pass, /proof.html). Older letters A-H still work if passed explicitly.
+  [string[]]$Agents = @('J', 'I'),   # K (actors) after the open world is in: -Agents K
   [string]$Model = ''
 )
 $ErrorActionPreference = 'Stop'
@@ -41,15 +41,16 @@ Write-Host "Model: $Model" -ForegroundColor Cyan
 $briefs = @{
   A = 'A-people.md'; B = 'B-buildings.md'; C = 'C-world.md'; D = 'D-physics.md'
   E = 'E-trees.md'; F = 'F-wildlife.md'; G = 'G-characters.md'; H = 'H-world.md'
+  I = 'I-look.md'; J = 'J-world.md'; K = 'K-actors.md'
 }
 $logs = Join-Path $root 'artifacts\agents\logs'
 New-Item -ItemType Directory -Force -Path $logs | Out-Null
 
 foreach ($agent in $Agents) {
   $brief = $briefs[$agent.ToUpper()]
-  if (-not $brief) { Write-Host "Unknown agent $agent (use A-H)" -ForegroundColor Red; continue }
+  if (-not $brief) { Write-Host "Unknown agent $agent (use A-K)" -ForegroundColor Red; continue }
   $letter = $agent.ToUpper()
-  $prompt = "You are Agent $letter on the KAGE project. Read artifacts/agents/README.md and artifacts/agents/$brief completely, then do that task end to end. " +
+  $prompt = "You are Agent $letter on the KAGE project. Read artifacts/CLAUDE_MASTER_PROMPT.md, artifacts/agents/README.md and artifacts/agents/$brief completely, then do that task end to end. " +
             "A previous agent may have started this task: review any existing work in your files, keep what is good and finish it. Edit only the files your brief allows. Run npm test and npx tsc --noEmit -p . until both pass. " +
             "Finish by writing artifacts/agents/$letter-handoff.md as the brief describes. Do not commit; Claude reviews first."
   $log = Join-Path $logs "$letter.log"

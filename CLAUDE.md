@@ -98,7 +98,20 @@ Current 2D stack (since the 3D rejection): GPU drawing via `src/render/gpuPresen
 `src/game/weather.ts` (T cycles, B burns nearest building), swaying grass strands in
 `src/render/terrainLayer.ts`.
 
-## Visual target and look pipeline (2026-11-25) — read this first
+## NEW DIRECTION (2026-11-25, latest) — 3D models + one ASCII pass at `/proof.html`
+
+The owner compared the old game with `/proof.html` and chose the proof ("very much better").
+Code: `src/proof/` (`main.ts` + `assets.ts` Claude's; `ascii.ts` Agent I; `world.ts` Agent J;
+`actors.ts` Agent K). Models: `public/proof/models/` + `CREDITS.txt` (CC0 only; `three/Horse.glb`
+unconfirmed, replace). Owner feedback on it: too noisy ("going to vomit"), models "not samurai"
+(KayKit cartoon), "isn't open world, no story/direction": **open world first**. Spec:
+`artifacts/CLAUDE_MASTER_PROMPT.md`; agent briefs round 3 in `artifacts/agents/README.md`
+(`I-look.md`, `J-world.md`, `K-actors.md`); launcher defaults to J and I. The old glyph game at
+`/` is frozen. Playwright here needs `channel: 'chrome'` plus the GPU flags for real FPS.
+Claude's role: review each hand-off (owned files only, tsc + tests, screenshots + measured FPS
+in the running page), then commit or return a fix list.
+
+## Visual target and look pipeline (2026-11-25) — old glyph game, now frozen
 
 Full spec, rejected approaches and phases: `artifacts/CLAUDE_MASTER_PROMPT.md` (identical to
 `CHATGPT_MASTER_PROMPT.md`). Reference frame sheets: `artifacts/preview/motivation-review/*.jpg`.

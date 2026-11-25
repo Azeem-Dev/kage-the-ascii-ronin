@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>KAGE proof: 3D models + ASCII</title>
+  <style>
+    html, body { margin: 0; height: 100%; overflow: hidden; background: #000; }
+    canvas { display: block; width: 100%; height: 100%; }
+    #hud { position: fixed; left: 16px; bottom: 14px; font: 11px/1.7 "Courier New", monospace; color: #8fa59a;
+      text-shadow: 0 1px 6px #000; pointer-events: none; }
+    #hud b { color: #d6e2cf; font-weight: normal; }
+    #load { position: fixed; inset: 0; display: grid; place-items: center; font: 13px "Courier New", monospace; color: #8fa59a; }
+  </style>
+</head>
+<body>
+  <div id="load">loading models…</div>
+  <div id="hud"></div>
+  <script type="module" src="/src/proof/main.ts"></script>
+</body>
+</html>

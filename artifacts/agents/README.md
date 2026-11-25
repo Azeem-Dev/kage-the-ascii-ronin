@@ -3,7 +3,36 @@
 Agents work in parallel. Each owns a set of files and must not edit anything
 else. Claude reviews every change before it is merged into the game.
 
-## Round 2 (current) — art: environment, wildlife, characters, world
+## Round 3 (current, 2026-11-25) — 3D models + one ASCII pass (`/proof.html`)
+
+The owner chose the 3D-models-plus-ASCII proof over the old glyph game. Read
+`artifacts/CLAUDE_MASTER_PROMPT.md` first, especially "THE OWNER'S CURRENT VERDICT" and
+"VISUAL TARGET". **Rounds 1–2 below describe the old pipeline; it is frozen. Ignore their
+"rejected 3D look" note: that was perspective 3D without a calm ASCII pass.**
+
+| Brief | Owner | Files you may edit |
+| --- | --- | --- |
+| `I-look.md` | Agent I | `src/proof/ascii.ts`, new files under `src/proof/look/**` |
+| `J-world.md` (**first priority: the open world**) | Agent J | `src/proof/world.ts`, new files under `src/proof/world/**`, new model packs under `public/proof/models/**` (+ `CREDITS.txt` lines) |
+| `K-actors.md` (after J) | Agent K | `src/proof/actors.ts`, new files under `src/proof/actors/**`, new model packs under `public/proof/models/**` (+ `CREDITS.txt` lines) |
+
+Claude owns `proof.html`, `src/proof/main.ts`, `src/proof/assets.ts`, `package.json`,
+`CLAUDE.md`, the master prompts. Do **not** edit anything under `src/` outside your row, and do
+not change the exported interfaces (`AsciiPass`, `World`, `Collider`, `Actors`) — if you need a
+change there or in `main.ts`, write it in your hand-off note and Claude does it.
+
+Rules for every round-3 agent:
+- Only CC0 models with a confirmed licence. Add one line per pack to
+  `public/proof/models/CREDITS.txt` (author, licence, URL). Keep only the files you use.
+- Seeded random only for anything placed in the world (no `Math.random()` in layout).
+- Test in the running page with a real GPU (master prompt, "HOW TO TEST"). Report measured
+  FPS at 1920×1080 while walking, and before/after screenshots saved in
+  `artifacts/agents/<letter>-shots/`.
+- `npx tsc --noEmit -p .` and `npm test` pass. Do not commit; write
+  `artifacts/agents/<letter>-handoff.md`: what changed, files, numbers, screenshots, open issues,
+  anything Claude must wire.
+
+## Round 2 (frozen old pipeline) — art: environment, wildlife, characters, world
 
 | Brief | Owner | Files you may edit |
 | --- | --- | --- |

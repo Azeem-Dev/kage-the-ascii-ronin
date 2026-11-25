@@ -28,6 +28,9 @@ export interface AsciiAsset {
   anchor: { x: number; y: number };
   variants: readonly string[];
   generate: (options: AssetOptions) => AsciiCell[];
+  /** Optional renderer that draws straight at the final on-screen scale (cells per source unit),
+   * so detail is sampled, not averaged down. Cells are in the scaled grid; anchor = round(anchor * scale). */
+  generateAt?: (options: AssetOptions, scale: number) => { cells: AsciiCell[]; width: number; height: number };
   /** Optional ground footprint in asset-local cells, relative to the anchor
    * (x right, y down). Each circle blocks movement once scaled into the world. */
   footprint?: readonly { x: number; y: number; radius: number }[];

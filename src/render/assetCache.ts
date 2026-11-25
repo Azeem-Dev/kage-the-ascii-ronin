@@ -20,9 +20,10 @@ export class AssetCache {
       if (animated) { entries.delete(key); entries.set(key, cached); }
       return cached;
     }
-    const source = asset.generate({ ...options, time: frame / 8 });
+    const timed = { ...options, time: frame / 8 };
+    const direct = asset.generateAt?.(timed, scale);
     const entry = {
-      sprite: this.renderer.compile(source, asset.width, asset.height, scale),
+      sprite: direct ? this.renderer.compile(direct.cells, direct.width, direct.height, 1) : this.renderer.compile(asset.generate(timed), asset.width, asset.height, scale),
       anchorX: Math.round((options.facing === 'left' ? asset.width - 1 - asset.anchor.x : asset.anchor.x) * scale),
       anchorY: Math.round(asset.anchor.y * scale),
     };

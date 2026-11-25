@@ -92,6 +92,8 @@ export interface VoxelRenderOptions {
   light?: readonly [number, number, number];
   /** Ambient strength 0..1. */
   ambient?: number;
+  /** Output cells per world unit. Below 1 the picture is sampled (not averaged) at final size. */
+  cellsPerUnit?: number;
 }
 
 export interface VoxelSprite {
@@ -115,13 +117,15 @@ export function renderVoxels(grid: VoxelGrid, opts: VoxelRenderOptions = {}): Vo
   const L: [number, number, number] = [L0[0] / ll, L0[1] / ll, L0[2] / ll];
   const ambient = opts.ambient ?? .5;
 
-  // Screen extents of the grid.
-  const halfW = hx + hy;
-  const anchorX = halfW;
-  const top = nz + Math.ceil((hx + hy) / 3);
-  const anchorY = top;
-  const width = halfW * 2 + 1;
-  const height = anchorY + Math.ceil((hx + hy) / 3) + 1;
+  // Screen extents of the grid at the requested resolution.
+  const cpu = opts.cellsPerUnit ?? 1;
+  const k = 1 / cpu;
+  const baseHalf = hx + hy;
+  const baseTop = nz + Math.ceil(baseHalf / 3);
+  const anchorX = Math.round(baseHalf * cpu);
+  const anchorY = Math.round(baseTop * cpu);
+  const width = Math.round(baseHalf * 2 * cpu) + 1;
+  const height = anchorY + Math.round((Math.ceil(baseHalf / 3) + 1) * cpu) + 1;
 
   const hit = new Int32Array(width * height).fill(-1);   // voxel value or -1
   const depth = new Float32Array(width * height);
@@ -129,19 +133,25 @@ export function renderVoxels(grid: VoxelGrid, opts: VoxelRenderOptions = {}): Vo
   const shade = new Float32Array(width * height);
   const hpos = new Float32Array(width * height * 3);
 
+  // Several sub-rays per cell when a cell covers more than a voxel: the nearest hit wins,
+  // so thin features (poles, frames, spears) survive instead of being averaged away.
+  const sub: [number, number][] = cpu < .72 ? [[-.25, -.25], [.25, -.25], [-.25, .25], [.25, .25]] : [[0, 0]];
   for (let cy = 0; cy < height; cy++) for (let cx = 0; cx < width; cx++) {
-    const u = cx - anchorX; const v = cy - anchorY;
     const i = cy * width + cx;
-    // Clip the ray to the grid box: X, Y and Z must all lie inside it.
-    const sHi = Math.min(2 * hx - u, 2 * hy + u, 3 * (v + nz)) - .01;
-    const sLo = Math.max(-2 * hx - u, -2 * hy + u, 3 * v);
-    for (let s = sHi; s >= sLo; s -= 1) {
-      const X = (s + u) / 2; const Y = (s - u) / 2; const Z = s / 3 - v;
-      const val = grid.get(Math.floor(X), Math.floor(Y), Math.floor(Z));
-      if (!val) continue;
-      hit[i] = val; depth[i] = s;
-      hpos[i * 3] = X; hpos[i * 3 + 1] = Y; hpos[i * 3 + 2] = Z;
-      break;
+    let bestS = -1e9;
+    for (const [ox, oy] of sub) {
+      const u = (cx - anchorX + ox) * k; const v = (cy - anchorY + oy) * k;
+      // Clip the ray to the grid box: X, Y and Z must all lie inside it.
+      const sHi = Math.min(2 * hx - u, 2 * hy + u, 3 * (v + nz)) - .01;
+      const sLo = Math.max(-2 * hx - u, -2 * hy + u, 3 * v);
+      for (let s = sHi; s >= sLo && s > bestS; s -= 1) {
+        const X = (s + u) / 2; const Y = (s - u) / 2; const Z = s / 3 - v;
+        const val = grid.get(Math.floor(X), Math.floor(Y), Math.floor(Z));
+        if (!val) continue;
+        bestS = s; hit[i] = val; depth[i] = s;
+        hpos[i * 3] = X; hpos[i * 3 + 1] = Y; hpos[i * 3 + 2] = Z;
+        break;
+      }
     }
   }
 
@@ -200,7 +210,7 @@ export function renderVoxels(grid: VoxelGrid, opts: VoxelRenderOptions = {}): Vo
     for (const [dx, dy] of neighbours) {
       const n = at(cx + dx, cy + dy);
       if (n < 0) { edge = Math.max(edge, 2); continue; }
-      if (Math.abs(depth[(cy + dy) * width + cx + dx] - depth[i]) > 7) edge = Math.max(edge, 1);
+      if (Math.abs(depth[(cy + dy) * width + cx + dx] - depth[i]) > 4 + 2 * k) edge = Math.max(edge, 1);
     }
     if (!emissive) { if (edge === 2) { r *= .5; g *= .5; b *= .55; } else if (edge === 1) { r *= .78; g *= .78; b *= .82; } }
     const lum = (.299 * r + .587 * g + .114 * b) / 255;

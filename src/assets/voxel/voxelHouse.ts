@@ -152,6 +152,12 @@ export function voxelHouse(base: IsoHouseSpec, palette: (s: IsoHouseSpec, varian
       const ruined = base.id === 'iso-hovel' && (o.variant % 3) === 1;
       return renderVoxels(buildHouse(spec, o.seed + o.variant * 31, ruined)).cells;
     },
+    generateAt: (o: AssetOptions, scale: number) => {
+      const spec = palette(base, o.variant);
+      const ruined = base.id === 'iso-hovel' && (o.variant % 3) === 1;
+      const r = renderVoxels(buildHouse(spec, o.seed + o.variant * 31, ruined), { cellsPerUnit: scale });
+      return { cells: r.cells, width: r.width, height: r.height };
+    },
     footprint,
     light: base.id === 'iso-hovel' ? undefined : { x: 0, y: -Math.round(H * .4), radius: Math.round((a + b) * 1.15), color: [1, .64, .28] },
   };

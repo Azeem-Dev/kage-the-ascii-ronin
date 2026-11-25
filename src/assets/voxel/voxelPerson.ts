@@ -1,6 +1,6 @@
 import { noise, type AsciiCell, type AssetOptions } from '../types.ts';
 import type { BodySpec } from '../people/body.ts';
-import { VoxelGrid, renderVoxels, tint, type VoxelSprite } from './voxel.ts';
+import { VoxelGrid, renderVoxels, tint } from './voxel.ts';
 
 /** Voxel humanoid built from a BodySpec. Local axes: f = forward, s = sideways, z = up.
  * Facing right looks toward world +X, facing left toward world +Y; both are visible
@@ -206,22 +206,23 @@ export function buildPerson(sp: BodySpec, o: AssetOptions, sizeSpec: BodySpec = 
   return g;
 }
 
-export function renderPerson(sp: BodySpec, o: AssetOptions, sizeSpec: BodySpec = sp): VoxelSprite {
-  return renderVoxels(buildPerson(sp, o, sizeSpec), { ambient: .66 });
-}
+const memo = new Map<string, { cells: AsciiCell[]; width: number; height: number }>();
 
-const memo = new Map<string, AsciiCell[]>();
-
-/** Poses are quantised (12 walk steps, 8 idle breaths) and cached: a figure is rendered once per pose. */
-export function personCells(sp: BodySpec, o: AssetOptions, sizeSpec: BodySpec = sp): AsciiCell[] {
+/** Poses are quantised (12 walk steps, 8 idle breaths) and cached: a figure is rendered once per pose and scale. */
+export function personAt(sp: BodySpec, o: AssetOptions, sizeSpec: BodySpec, scale: number): { cells: AsciiCell[]; width: number; height: number } {
   const walking = o.action === 'walk' || o.action === 'run';
   const step = walking ? Math.round(o.time * 6.5 / (Math.PI * 2) * 12) % 12 : Math.round(o.time * 2.9 / (Math.PI * 2) * 8) % 8;
   const q: AssetOptions = { ...o, time: walking ? step / 12 * Math.PI * 2 / 6.5 : step / 8 * Math.PI * 2 / 2.9 };
-  const key = `${sp.skin}${sp.torsoColor}${sp.legsColor}${sp.headwear}${sp.held}${sp.hairColor}${sp.cloak ?? ''}${sp.tabard ?? ''}${sp.apron ?? ''}${sp.shoulder}${sp.height}|${sizeSpec.shoulder}|${sp.patches ? o.seed : o.seed & 3}|${o.facing}|${o.action}|${step}`;
+  const key = `${sp.skin}${sp.torsoColor}${sp.legsColor}${sp.headwear}${sp.held}${sp.hairColor}${sp.cloak ?? ''}${sp.tabard ?? ''}${sp.apron ?? ''}${sp.shoulder}${sp.height}|${sizeSpec.shoulder}|${sp.patches ? o.seed : o.seed & 3}|${o.facing}|${o.action}|${step}|${scale.toFixed(2)}`;
   const hit = memo.get(key);
   if (hit) { memo.delete(key); memo.set(key, hit); return hit; }
-  const cells = renderPerson(sp, q, sizeSpec).cells;
-  memo.set(key, cells);
-  if (memo.size > 160) memo.delete(memo.keys().next().value!);
-  return cells;
+  const r = renderVoxels(buildPerson(sp, q, sizeSpec), { ambient: .6, cellsPerUnit: scale });
+  const out = { cells: r.cells, width: r.width, height: r.height };
+  memo.set(key, out);
+  if (memo.size > 200) memo.delete(memo.keys().next().value!);
+  return out;
+}
+
+export function personCells(sp: BodySpec, o: AssetOptions, sizeSpec: BodySpec = sp): AsciiCell[] {
+  return personAt(sp, o, sizeSpec, 1).cells;
 }

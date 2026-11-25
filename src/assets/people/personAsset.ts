@@ -1,5 +1,5 @@
 import { spec, type BodySpec } from './body.ts';
-import { personAt, personCells, personSpriteSize } from '../voxel/voxelPerson.ts';
+import { personCells, personModel, personSpriteSize } from '../voxel/voxelPerson.ts';
 import type { AsciiAsset } from '../types.ts';
 
 interface PersonAssetDefinition extends Pick<AsciiAsset, 'id' | 'name' | 'description' | 'variants'> {
@@ -43,7 +43,7 @@ export function personAsset(definition: PersonAssetDefinition): AsciiAsset {
     footprint: [{ x: 0, y: 0, radius: footprintRadius ?? Math.max(3, base.shoulder * .36) }],
     generateAt: (options, scale) => {
       const index = ((Math.trunc(options.variant) % bodies.length) + bodies.length) % bodies.length;
-      return personAt(bodies[index], options, baseSpec, scale);
+      return personModel(bodies[index], options, baseSpec, scale);
     },
     generate: options => {
       const index = ((Math.trunc(options.variant) % bodies.length) + bodies.length) % bodies.length;

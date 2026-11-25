@@ -19,6 +19,9 @@ import { Weather, type Fire } from './game/weather.ts';
 import { MOVERS, moverAt } from './game/townLife.ts';
 import { Wildlife } from './game/wildlife.ts';
 import { HOUSE_SPECS, ISO_BUILDINGS } from './assets/isoBuildings.ts';
+import { personModelAt } from './assets/voxel/threePerson.ts';
+import { setPersonModelRenderer } from './assets/voxel/voxelPerson.ts';
+setPersonModelRenderer(personModelAt);
 import { ISO, inputToWorld, toScreenX, toScreenY, toWorldX, toWorldY, worldBounds } from './game/view.ts';
 import './riverScene.css';
 
@@ -108,7 +111,7 @@ export function startRiverScene(): void {
     detailStep = Math.max(1, Math.ceil(.8 / zoom));
     // Glyphs are rasterized at device pixels so they stay crisp on scaled displays.
     const dpr = Math.max(1, Math.min(2, devicePixelRatio || 1));
-    renderer.resizeGlyphs(Math.max(4, Math.round(4 * zoom * detailStep * dpr)), Math.max(6, Math.round(6 * zoom * detailStep * dpr)));
+    renderer.resizeGlyphs(Math.max(3, Math.round(4 * zoom * detailStep * dpr)), Math.max(5, Math.round(6 * zoom * detailStep * dpr)));
     cols = Math.max(1, Math.ceil(innerWidth * dpr / renderer.cellWidth)); rows = Math.max(1, Math.ceil(innerHeight * dpr / renderer.cellHeight));
     if (canvas.width !== cols * renderer.cellWidth) canvas.width = cols * renderer.cellWidth;
     if (canvas.height !== rows * renderer.cellHeight) canvas.height = rows * renderer.cellHeight;
@@ -500,7 +503,7 @@ export function startRiverScene(): void {
       // Light offsets are sprite-space: x along the screen, y up the sprite.
       renderer.addLight(cols, rows, cellX(lamp.x, lamp.y) + src.x * lamp.scale / detailStep, cellY(lamp.x, lamp.y) + src.y * lamp.scale / detailStep, src.radius * lamp.scale * (.7 + night * .5) / detailStep, r * glow, g * glow, b * glow);
     }
-    if (night > .35) light(hero.x, hero.y, 18, 46 / detailStep, .35 * night, .3 * night, .22 * night);
+    light(hero.x, hero.y, 18, 64 / detailStep, .5 + .3 * night, .42 + .25 * night, .3 + .2 * night);
     // Firelight from burning buildings.
     for (const fl of weather.lights(time)) light(fl.x, fl.y, fl.z, fl.radius / detailStep, 1.15 * fl.strength, .55 * fl.strength, .2 * fl.strength);
     const generationEnd = performance.now();

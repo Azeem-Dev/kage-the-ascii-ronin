@@ -226,3 +226,11 @@ export function personAt(sp: BodySpec, o: AssetOptions, sizeSpec: BodySpec, scal
 export function personCells(sp: BodySpec, o: AssetOptions, sizeSpec: BodySpec = sp): AsciiCell[] {
   return personAt(sp, o, sizeSpec, 1).cells;
 }
+
+export type PersonModelRenderer = (sp: BodySpec, o: AssetOptions, sizeSpec: BodySpec, scale: number) => { cells: AsciiCell[]; width: number; height: number } | null;
+let modelRenderer: PersonModelRenderer | null = null;
+/** The browser build registers the three.js model renderer here; Node tests fall back to the voxel figure. */
+export function setPersonModelRenderer(fn: PersonModelRenderer | null): void { modelRenderer = fn; }
+export function personModel(sp: BodySpec, o: AssetOptions, sizeSpec: BodySpec, scale: number) {
+  return modelRenderer?.(sp, o, sizeSpec, scale) ?? personAt(sp, o, sizeSpec, scale);
+}

@@ -373,7 +373,7 @@ export class AssetRenderer {
 
       // Background: the ground material under everything that is not a solid object.
       let bgDef = defs[layer === LAYER.prop || layer === LAYER.actor ? ids[i] : under[i]];
-      let bgFactor = layer === LAYER.prop || layer === LAYER.actor ? .3 : .08;
+      let bgFactor = layer === LAYER.prop || layer === LAYER.actor ? .3 : .34;
       if (!bgDef || (bgDef.r === 0 && bgDef.g === 0 && bgDef.b === 0)) { bgDef = defs[0]; bgFactor = 0; }
 
       const id = ids[i];
@@ -392,7 +392,7 @@ export class AssetRenderer {
           // Mild lift plus extra saturation: the old ×1.4 + rim + bloom burned
           // every costume to white, so NPCs read as ghosts.
           const al = .299 * fr + .587 * fgc + .114 * fb;
-          fr = (al + (fr - al) * 1.35) * 1.12 + .02; fgc = (al + (fgc - al) * 1.35) * 1.12 + .02; fb = (al + (fb - al) * 1.35) * 1.12 + .02;
+          fr = (al + (fr - al) * 1.5) * 1.3 + .03; fgc = (al + (fgc - al) * 1.5) * 1.3 + .03; fb = (al + (fb - al) * 1.5) * 1.3 + .03;
           if (outline[i] === 2) { fr += .1; fgc += .095; fb += .08; }
         }
       }

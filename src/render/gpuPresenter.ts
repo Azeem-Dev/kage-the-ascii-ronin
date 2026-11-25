@@ -65,14 +65,65 @@ export class GpuPresenter {
           vec4 f = texture2D(tFg, tc); vec4 b = texture2D(tBg, tc);
           vec4 info = texture2D(tInfo, tc);
           float mask = glyphMask(f, b, local);
+          float rawMask = mask;
           // Ink follows light: dim cells keep only the strongest strokes, lit cells show the whole glyph.
           // This gives shadows sparse glyphs and highlights dense ones, like a real ASCII shading ramp.
           float inkLum = dot(f.rgb, vec3(.299, .587, .114));
           float cover = clamp(inkLum * 1.9 + .2, 0., 1.);
           float thr = (1. - cover) * .8;
           mask = smoothstep(thr, thr + .22, mask);
-          vec3 srgb = mix(b.rgb, f.rgb, mask);
           float layer = floor(info.r * 255. / 50. + .5);
+          vec3 bgc = b.rgb;
+          float bladeA = 0.; vec3 bladeCol = vec3(0.);
+          // Open ground: near-black surface covered by procedural grass blades (long thin strokes with wind sway,
+          // moonbeams and flowers), drawn per pixel rather than as letters.
+          if (layer < .5 && info.g < .5) {
+            vec3 acc = b.rgb * .28; float wsum = .28;
+            for (int j = -2; j <= 2; j++) for (int i = -2; i <= 2; i++) {
+              if (i == 0 && j == 0) continue;
+              vec2 q = (cell + vec2(float(i), float(j)) + .5) / grid;
+              float w = 1. / (1. + float(i * i + j * j));
+              acc += texture2D(tBg, q).rgb * w; wsum += w;
+            }
+            vec3 blur = acc / wsum;
+            vec2 wc = cell + camCell;
+            float lum = dot(blur, vec3(.299, .587, .114));
+            vec2 g = wc / 11.; vec2 gi = floor(g); vec2 gf = fract(g); gf = gf * gf * (3. - 2. * gf);
+            float n = mix(mix(hash(gi), hash(gi + vec2(1., 0.)), gf.x), mix(hash(gi + vec2(0., 1.)), hash(gi + vec2(1., 1.)), gf.x), gf.y);
+            bgc = mix(vec3(.016, .026, .034) * (.8 + lum * 2.), blur * .55, .16);
+            float greenness = blur.g / (blur.r + blur.b + .02);
+            float dens = smoothstep(.5, .9, greenness) * (.3 + .85 * n);
+            // Paved / bare ground keeps its own glyphs and a lighter surface, so roads and squares stay readable.
+            float paved = 1. - smoothstep(.45, .8, greenness);
+            mask = rawMask * paved;
+            f.rgb = min(vec3(1.), f.rgb * 1.5 + vec3(.02));
+            bgc = mix(bgc, blur * 1.5 + vec3(.025, .03, .04), paved);
+            // Moonbeam: a diagonal band that turns blades pale and bright.
+            float bs = wc.x * .5 - wc.y * .8;
+            float beam = exp(-pow((fract(bs / 70. + .3) - .5) * 4.2, 2.)) * (.45 + .8 * n);
+            for (int dy = 0; dy <= 2; dy++) for (int dx = -1; dx <= 1; dx++) {
+              vec2 rc = wc + vec2(float(dx), float(dy));
+              for (int k = 0; k < 2; k++) {
+                float h0 = hash(rc * 1.31 + float(k) * 7.7);
+                if (h0 > dens) continue;
+                float h1 = hash(rc * 2.17 + float(k) * 3.3 + 5.);
+                float h2 = hash(rc * .73 + float(k) * 9.1 + 2.);
+                float len = 1.3 + 1.9 * h1;
+                float t = ((float(dy) + .96) - local.y) / len;
+                if (t < 0. || t > 1.) continue;
+                float tilt = (h1 - .5) * .55 + sin(time * 1.4 + rc.x * .21 + rc.y * .13) * .2;
+                float cx = float(dx) + h2 + tilt * t * len;
+                float wd = .2 * (1. - t * .65);
+                float a = smoothstep(wd, wd * .35, abs(local.x - cx));
+                if (a < .02) continue;
+                vec3 gc = mix(vec3(.07, .3, .14), vec3(.3, .78, .38), h1) * (.45 + .55 * t);
+                gc = mix(gc, vec3(.78, .95, 1.), clamp(beam * 1.1, 0., .9) * (.55 + .45 * t));
+                if (h0 < dens * .06 && t > .9) { gc = vec3(.66, .46, .88); a = 1.; }
+                if (a > bladeA) { bladeA = a; bladeCol = gc; }
+              }
+            }
+          }
+          vec3 srgb = mix(bgc, f.rgb, mask);
           // Water: mirrored, rippling reflections of whatever stands above, plus a moon path.
           if (info.g > .5 && (layer < .5 || layer > 3.5)) {
             float base = 0.;
@@ -119,6 +170,23 @@ export class GpuPresenter {
               else if (above2 < 1.5 || above2 > 2.5) srgb = mix(srgb, snowColor, snowCover * .5);
             }
           }
+          // Cool night grade: everything leans blue-grey; only warm light (windows, lamps, fire, skin tones) keeps its colour.
+          {
+            float lm = dot(srgb, vec3(.299, .587, .114));
+            float warm = smoothstep(.04, .26, srgb.r - srgb.b);
+            // Foliage keeps its green so trees read as trees, not as cold walls.
+            warm = max(warm, smoothstep(.015, .1, srgb.g - max(srgb.r, srgb.b)) * .9);
+            vec3 cool = vec3(lm) * vec3(.74, .9, 1.12) + (srgb - vec3(lm)) * .4;
+            srgb = mix(srgb, mix(cool, srgb, warm), .7);
+            // Soft haze toward the top of the screen for depth.
+            srgb = mix(srgb, vec3(.07, .1, .17), .24 * vUv.y * vUv.y);
+            // Dark world, light pool around the player: far cells fall toward black; lamps and windows stay lit.
+            vec2 pc = (vUv - vec2(.5, .46)) * vec2(grid.x / grid.y * .62, 1.);
+            float pool = smoothstep(.95, .12, length(pc));
+            float keepLit = smoothstep(.5, .85, lm);
+            srgb *= mix(mix(.34, 1., pool), 1., keepLit);
+          }
+          srgb = mix(srgb, bladeCol, bladeA);
           // Glyph strokes cover only part of a cell, so lift mid-tones to keep colours rich, not muddy.
           srgb = pow(clamp(srgb, 0., 1.), vec3(.78)) * 1.12;
           // Lightning lights everything for an instant, strongest on what was already lit.

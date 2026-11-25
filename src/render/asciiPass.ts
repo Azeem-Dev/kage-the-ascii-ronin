@@ -10,6 +10,14 @@ import { Material, MATERIAL_DEFS, Surface } from '../game/materials.ts';
 import { GlyphAtlas, quantizeRGB } from './glyphAtlas.ts';
 import { SceneBuffer } from './sceneBuffer.ts';
 
+// 4x4 ordered Bayer dither offsets (-12..+14) to eliminate gradient/color banding
+const BAYER_4X4 = [
+  -12, 4, -8, 8,
+  8, -4, 12, 0,
+  -6, 6, -10, 2,
+  14, -2, 10, -6,
+];
+
 export class AsciiPass {
   public cols: number;
   public rows: number;
@@ -34,6 +42,9 @@ export class AsciiPass {
 
   // Cached material glyph IDs (material -> number[])
   private materialGlyphIds: Record<number, number[]>;
+
+  // Code-matrix density tiers (8 tiers from shadow to specular highlight)
+  private tierGlyphIds: number[][];
 
   constructor(cols: number, rows: number, atlas: GlyphAtlas) {
     this.cols = cols;
@@ -61,6 +72,18 @@ export class AsciiPass {
       const matId = Number(matIdStr);
       this.materialGlyphIds[matId] = def.glyphs.map((g) => atlas.getGlyphIndex(g));
     }
+
+    const rawTiers: string[][] = [
+      [' '], // Tier 0: Deep void
+      ['.', ',', "'", '`', ':', '-'], // Tier 1: Shadow punctuation
+      [';', '~', '+', '=', '<', '>', '/', '\\', 'r', 's', 'c', 'v', 'x', 'z'], // Tier 2: Mid shadow code
+      ['a', 'e', 'o', 'u', 'n', 't', 'p', 'd', 'k', 'h', 'f', '1', '7', '*', '?'], // Tier 3: Mid-tone syntax
+      ['w', 'm', 'q', 'b', 'g', 'y', 'X', 'Z', 'V', 'U', 'C', 'L', '2', '3', '4', '5'], // Tier 4: Dense code
+      ['0', '6', '8', '9', 'O', 'Q', 'D', 'R', 'P', 'B', 'K', 'H', 'A', 'E', '$', '&'], // Tier 5: Bright identifiers
+      ['#', '%', 'W', 'M', 'B', '8', '&', '$', '@'], // Tier 6: High luminance keywords
+      ['@', '#', 'W', 'M', '8', 'Q'], // Tier 7: Specular highlight
+    ];
+    this.tierGlyphIds = rawTiers.map((tier) => tier.map((ch) => atlas.getGlyphIndex(ch)));
   }
 
   public resize(cols: number, rows: number): void {
@@ -248,48 +271,57 @@ export class AsciiPass {
           }
         } else {
           const glyphs = this.materialGlyphIds[mat] ?? [];
-          const textureHash = (cellIdx * 37 + mat * 71 + 17) & 0xffff;
+          const bayer = BAYER_4X4[((cy & 3) << 2) | (cx & 3)];
+          const ditherLum = Math.max(0, Math.min(255, litLum + bayer));
+          const codeHash = ((cx * 73856093) ^ (cy * 19349663) ^ (mat * 83492791)) >>> 0;
+          const tiers = this.tierGlyphIds;
           const firstVisible = glyphs.findIndex((glyph) => glyph !== 0);
           const visibleStart = firstVisible > 0 ? firstVisible : 0;
           const visibleLength = Math.max(1, glyphs.length - visibleStart);
           const shade = glyphs.length > 0
-            ? visibleStart + Math.max(0, Math.min(visibleLength - 1, Math.floor((litLum * visibleLength) / 256)))
+            ? visibleStart + Math.max(0, Math.min(visibleLength - 1, Math.floor((ditherLum * visibleLength) / 256)))
             : 0;
 
           if (mat === Material.GRASS) {
-            // Sparse but genuinely visible blades, even in deep moonlight.
-            if (litLum > 4 && textureHash % 6 === 0) {
-              glyphId = glyphs[Math.min(glyphs.length - 1, 3 + Math.floor((litLum * 5) / 256))] ?? 0;
+            // Subtle dark forest code-matrix blades across the lower ground
+            if ((codeHash % 10) < (ditherLum > 36 ? 7 : 5)) {
+              const t = ditherLum < 45 ? tiers[1] : tiers[2];
+              glyphId = t[codeHash % t.length];
             }
           } else if (mat === Material.FOLIAGE) {
-            // Clustered leaves remain visible in shadow instead of becoming void.
-            if (litLum > 4 && textureHash % 4 < 2) {
-              glyphId = glyphs[Math.min(glyphs.length - 1, 3 + Math.floor((litLum * 5) / 256))] ?? 0;
+            // Clustered leafy code characters
+            if ((codeHash % 5) < 4) {
+              const t = ditherLum < 55 ? tiers[2] : ditherLum < 110 ? tiers[3] : tiers[4];
+              glyphId = t[codeHash % t.length];
             }
           } else if (mat === Material.WATER) {
             const phase = (cx + animTick + (cy & 1)) % 9;
             glyphId = phase < 4 ? glyphs[Math.min(glyphs.length - 1, phase + 2)] : 0;
           } else if (mat === Material.SHOJI) {
             if (litLum > 35) {
-              glyphId = textureHash % 7 === 0 ? this.atlas.getGlyphIndex('+') : (glyphs[shade] ?? 0);
+              glyphId = codeHash % 7 === 0 ? this.atlas.getGlyphIndex('+') : (glyphs[shade] ?? 0);
             }
           } else if (mat === Material.FIRE || mat === Material.LANTERN || mat === Material.MOON) {
-            const phase = (textureHash ^ fireTick) % glyphs.length;
+            const phase = (codeHash ^ fireTick) % glyphs.length;
             glyphId = glyphs[phase] ?? 0;
           } else if (mat === Material.TORII) {
-            glyphId = surface === Surface.VERTICAL && textureHash % 3 === 0
+            glyphId = surface === Surface.VERTICAL && codeHash % 3 === 0
               ? this.atlas.getGlyphIndex('║')
               : (glyphs[shade] ?? 0);
+          } else if (mat === Material.STONE || mat === Material.CLIFF || mat === Material.NONE) {
+            // High-density alphanumeric code-matrix shaded by dithered 3D luminance
+            const tierIdx = ditherLum < 12 ? 0
+              : ditherLum < 36 ? 1
+              : ditherLum < 68 ? 2
+              : ditherLum < 105 ? 3
+              : ditherLum < 145 ? 4
+              : ditherLum < 185 ? 5
+              : ditherLum < 222 ? 6
+              : 7;
+            const t = tiers[tierIdx];
+            glyphId = t[codeHash % t.length];
           } else if (glyphs.length > 0) {
             glyphId = glyphs[shade] ?? 0;
-            // Sparse deterministic cracks break up broad stone and wood faces.
-            if ((mat === Material.STONE || mat === Material.CLIFF) && litLum > 42 && textureHash % 29 === 0) {
-              glyphId = this.atlas.getGlyphIndex(textureHash % 2 === 0 ? 'x' : '/');
-            }
-          } else if (litLum > 40) {
-            const fallback = this.materialGlyphIds[Material.STONE];
-            const index = Math.max(0, Math.min(4, Math.floor(litLum / 52)));
-            glyphId = fallback[index] ?? 0;
           }
         }
 
@@ -330,7 +362,8 @@ export class AsciiPass {
           bB = Math.max(bB, 82);
         }
 
-        const colorIdx = quantizeRGB(rB, gB, bB);
+        const colorDither = Math.round(BAYER_4X4[((cy & 3) << 2) | (cx & 3)] * 1.4);
+        const colorIdx = quantizeRGB(rB + colorDither, gB + colorDither, bB + colorDither);
 
         // 3d. Copy the glyph cell into the CPU framebuffer.
         this.atlas.blitToPixelBuffer(outputPixels, outputWidth, glyphId, colorIdx, cx * cw, destY);

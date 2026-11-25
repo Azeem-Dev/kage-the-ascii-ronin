@@ -245,11 +245,11 @@ export function startRiverScene(): void {
   function place(ids: Uint32Array, compiled: PlacedSprite, x: number, y: number, layer: number = LAYER.prop, castShadow = true, lift = 0): void {
     const sx = cellX(x, y); const sy = cellY(x, y) - lift / detailStep;
     // Scenery standing in front of the hero gets a see-through window around them.
-    const hole = layer === LAYER.prop && depth(x, y) > depth(hero.x, hero.y) ? seeThrough : undefined;
+    const hole = undefined;
     renderer.stamp(ids, cols, rows, compiled.sprite, sx - compiled.anchorX, sy - compiled.anchorY, layer, castShadow ? sy : undefined, hole);
   }
   /** Window (in cells) around the hero that scenery in front of them leaves open. */
-  let seeThrough: { x: number; y: number; rx: number; ry: number } | undefined;
+  // (seeThrough crater cutout disabled so buildings render solid)
   function plot(ids: Uint32Array, x: number, y: number, id: number): void {
     const sx = Math.round(cellX(x, y)); const sy = Math.round(cellY(x, y));
     if (sx >= 0 && sy >= 0 && sx < cols && sy < rows) ids[sy * cols + sx] = id;
@@ -424,7 +424,7 @@ export function startRiverScene(): void {
         }
       });
     }
-    seeThrough = { x: cellX(hero.x, hero.y), y: cellY(hero.x, hero.y) - (mounted ? 30 : 20) / detailStep, rx: (mounted ? 24 : 15) / detailStep, ry: (mounted ? 30 : 22) / detailStep };
+    // Hero and horse actor rendering
     const actorOptions = { time, seed: 17, variant: hero.variant, action: hero.moving ? 'walk' as const : 'idle' as const, facing: hero.facing };
     draws.push({
       ...at(horse.x, horse.y), draw: () => {

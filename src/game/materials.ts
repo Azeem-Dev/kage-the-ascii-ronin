@@ -49,7 +49,7 @@ export const MATERIAL_DEFS: Record<Material, MaterialDef> = {
     name: 'Grass',
     glyphs: [' ', ' ', '.', ',', "'", '"'],
     debugColor: '#1d8348',
-    useEdgeOverride: true,
+    useEdgeOverride: false,
   },
   [Material.WOOD]: {
     name: 'Wood',
@@ -61,13 +61,13 @@ export const MATERIAL_DEFS: Record<Material, MaterialDef> = {
     name: 'Stone',
     glyphs: [' ', '░', '▒', '▓', '█', '.', ':'],
     debugColor: '#7f8c8d',
-    useEdgeOverride: true,
+    useEdgeOverride: false,
   },
   [Material.CLIFF]: {
     name: 'Cliff / High Ground',
     glyphs: [' ', '░', '▒', '▓', '█', 'x', '#'],
     debugColor: '#566573',
-    useEdgeOverride: true,
+    useEdgeOverride: false,
   },
   [Material.WATER]: {
     name: 'Water',
@@ -91,7 +91,7 @@ export const MATERIAL_DEFS: Record<Material, MaterialDef> = {
     name: 'Cloth',
     glyphs: [' ', '░', '▒', '▓', '█'],
     debugColor: '#8e44ad',
-    useEdgeOverride: true,
+    useEdgeOverride: false,
   },
   [Material.FOLIAGE]: {
     name: 'Foliage',

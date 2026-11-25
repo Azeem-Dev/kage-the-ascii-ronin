@@ -44,11 +44,11 @@ export const CONFIG = {
     bufferScale: 2,
     
     // Sobel edge detection threshold on physical geometry (0-255)
-    edgeThreshold: 36,
+    edgeThreshold: 95,
     
     // Color saturation & brightness boost for the glowing ASCII terminal look
-    saturationBoost: 1.05,
-    brightnessBoost: 1.02,
+    saturationBoost: 1.0,
+    brightnessBoost: 1.0,
     
     // Background cell tint opacity (gives subtle CRT phosphor glow)
     cellBgOpacity: 0.14,
@@ -59,7 +59,7 @@ export const CONFIG = {
     vignetteColor: 'rgba(0, 2, 8, 0.38)',
     
     // Quantized color palette resolution: 4 levels per channel (4x4x4 = 64 colors)
-    paletteLevels: [18, 75, 160, 255],
+    paletteLevels: [14, 52, 96, 145, 200, 255],
     
     // Ramps available for cycling with F4
     activeRampIndex: 0,

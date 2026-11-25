@@ -335,10 +335,9 @@ export class SceneBuffer {
     ctx.globalCompositeOperation = 'multiply';
     ctx.drawImage(this.lightCanvas, 0, 0);
 
-    // 3. Restrained additive blend for glowing lantern cores. Keeping this
-    // subtle prevents broad radial lights from becoming neon rings.
+    // 3. Soft restrained additive glow (very low alpha prevents neon rings)
     ctx.globalCompositeOperation = 'lighter';
-    ctx.globalAlpha = 0.28;
+    ctx.globalAlpha = 0.12;
     ctx.drawImage(this.lightCanvas, 0, 0);
     ctx.globalAlpha = 1;
 

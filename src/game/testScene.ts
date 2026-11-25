@@ -105,7 +105,7 @@ export class TestScene {
     this.zoom += (this.targetZoom - this.zoom) * 0.18;
 
     // 1. Clear: deep night atmosphere
-    buffer.clear('#091216', '#304157');
+    buffer.clear('#091216', '#3c4e66');
 
     // Apply the same camera transform to geometry and material ownership.
     // Scaling below 1 reveals more of the scene; scaling above 1 crops in.
@@ -603,17 +603,17 @@ export class TestScene {
     const pHalo = 26 + Math.sin(gameTime * 5) * 1.5;
     const playerLight = this.transformPoint(px, py - 6);
     buffer.addLight(playerLight.x, playerLight.y, pHalo * this.zoom, [
-      { stop: 0.0, color: 'rgba(255, 240, 200, 0.55)' },
-      { stop: 0.35, color: 'rgba(255, 190, 80, 0.22)' },
+      { stop: 0.0, color: 'rgba(255, 245, 220, 0.65)' },
+      { stop: 0.45, color: 'rgba(245, 225, 175, 0.22)' },
       { stop: 1.0, color: 'rgba(0, 0, 0, 0)' },
     ]);
 
     // 2. Paper Lantern at Shrine Corner
     const lanternLight = this.transformPoint(245, 95);
-    const flicker = Math.sin(gameTime * 7.2) * 0.06 + Math.cos(gameTime * 14.8) * 0.04;
+    const flicker = Math.sin(gameTime * 7.2) * 0.05 + Math.cos(gameTime * 14.8) * 0.03;
     buffer.addLight(lanternLight.x, lanternLight.y, Math.round(w * 0.10 * this.zoom * (1 + flicker)), [
-      { stop: 0.0, color: 'rgba(255, 220, 130, 0.72)' },
-      { stop: 0.4, color: 'rgba(255, 140, 25, 0.30)' },
+      { stop: 0.0, color: 'rgba(255, 232, 175, 0.65)' },
+      { stop: 0.45, color: 'rgba(245, 200, 125, 0.22)' },
       { stop: 1.0, color: 'rgba(0, 0, 0, 0)' },
     ]);
 

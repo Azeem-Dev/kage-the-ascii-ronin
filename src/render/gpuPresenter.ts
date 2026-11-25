@@ -70,7 +70,7 @@ export class GpuPresenter {
           // Water: mirrored, rippling reflections of whatever stands above, plus a moon path.
           if (info.g > .5 && (layer < .5 || layer > 3.5)) {
             float base = 0.;
-            for (int k = 1; k <= 30; k++) {
+            for (int k = 1; k <= 16; k++) {
               vec2 q = cell - vec2(0., float(k));
               if (q.y < 0.) break;
               float l = layerAt(q);

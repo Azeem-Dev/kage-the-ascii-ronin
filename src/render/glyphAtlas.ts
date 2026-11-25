@@ -9,7 +9,9 @@ import { MATERIAL_DEFS } from '../game/materials.ts';
 
 // Precomputed 256-entry lookup table mapping 0..255 byte -> 0..3 palette channel index
 const QUANT_LUT = new Uint8Array(256);
-const PALETTE_LEVELS = CONFIG.render.paletteLevels; // [18, 75, 160, 255]
+const PALETTE_LEVELS = CONFIG.render.paletteLevels;
+const PALETTE_STRIDE = PALETTE_LEVELS.length;
+const PALETTE_COUNT = PALETTE_STRIDE * PALETTE_STRIDE * PALETTE_STRIDE;
 
 // Initialize the quantization LUT: nearest distance to palette levels
 for (let v = 0; v < 256; v++) {
@@ -35,18 +37,18 @@ export interface QuantizedColor {
 }
 
 export const PALETTE_64: QuantizedColor[] = [];
-for (let rIdx = 0; rIdx < 4; rIdx++) {
-  for (let gIdx = 0; gIdx < 4; gIdx++) {
-    for (let bIdx = 0; bIdx < 4; bIdx++) {
+for (let rIdx = 0; rIdx < PALETTE_STRIDE; rIdx++) {
+  for (let gIdx = 0; gIdx < PALETTE_STRIDE; gIdx++) {
+    for (let bIdx = 0; bIdx < PALETTE_STRIDE; bIdx++) {
       const r = PALETTE_LEVELS[rIdx];
       const g = PALETTE_LEVELS[gIdx];
       const b = PALETTE_LEVELS[bIdx];
       // Glowing text color
       const css = `rgb(${r},${g},${b})`;
-      // Faint CRT phosphor background tint
-      const bgR = Math.round(4 + r * 0.12);
-      const bgG = Math.round(6 + g * 0.12);
-      const bgB = Math.round(10 + b * 0.12);
+      // Subtle near-black background so glyphs remain crisp
+      const bgR = Math.round(2 + r * 0.03);
+      const bgG = Math.round(3 + g * 0.03);
+      const bgB = Math.round(5 + b * 0.03);
       const bgCss = `rgb(${bgR},${bgG},${bgB})`;
       PALETTE_64.push({ r, g, b, css, bgCss });
     }
@@ -54,13 +56,13 @@ for (let rIdx = 0; rIdx < 4; rIdx++) {
 }
 
 /**
- * Fast mapping of raw RGB to quantized 6-bit color index (0..63)
+ * Fast mapping of raw RGB to quantized color index (0..PALETTE_COUNT-1)
  */
 export function quantizeRGB(r: number, g: number, b: number): number {
   const rIdx = QUANT_LUT[Math.min(255, Math.max(0, r))];
   const gIdx = QUANT_LUT[Math.min(255, Math.max(0, g))];
   const bIdx = QUANT_LUT[Math.min(255, Math.max(0, b))];
-  return (rIdx << 4) | (gIdx << 2) | bIdx;
+  return (rIdx * PALETTE_STRIDE + gIdx) * PALETTE_STRIDE + bIdx;
 }
 
 export class GlyphAtlas {
@@ -125,7 +127,7 @@ export class GlyphAtlas {
     // 2. Create offscreen canvas for the atlas
     // Width = numGlyphs * cellWidth, Height = 64 * cellHeight
     const atlasWidth = this.count * this.cellWidth;
-    const atlasHeight = 64 * this.cellHeight;
+    const atlasHeight = PALETTE_COUNT * this.cellHeight;
 
     this.canvas = document.createElement('canvas');
     this.canvas.width = atlasWidth;
@@ -151,8 +153,8 @@ export class GlyphAtlas {
     ctx.textBaseline = 'middle';
     ctx.imageSmoothingEnabled = false;
 
-    // Render every color (rows 0..63) and every glyph (cols 0..count-1)
-    for (let cIdx = 0; cIdx < 64; cIdx++) {
+    // Render every color (rows 0..PALETTE_COUNT-1) and every glyph (cols 0..count-1)
+    for (let cIdx = 0; cIdx < PALETTE_COUNT; cIdx++) {
       const color = PALETTE_64[cIdx];
       const y = cIdx * ch;
 

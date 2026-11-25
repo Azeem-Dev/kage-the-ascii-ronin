@@ -33,10 +33,11 @@ interface Ripple { x: number; y: number; born: number }
 export function startRiverScene(): void {
   document.title = 'KAGE / The whispering river';
   document.documentElement.className = 'river-view';
-  document.body.innerHTML = `<main class="river-game"><canvas id="world-canvas" aria-label="Playable ASCII river scene. Move with WASD or tap the ground."></canvas><div class="world-vignette"></div><header class="world-hud"><div><span class="world-kicker">KAGE / VISUAL FOUNDATION</span><h1>The whispering river</h1><p>Wind through the reeds. Moonlight on the current.</p></div><div class="world-region">ASHEN VALLEY<br><span id="world-state">KNIGHT · WEATHERED STEEL</span></div></header><div class="world-bottom"><div class="world-health">KAGE <span>[━━━━━━━━━━━━]</span><small id="world-location">RIVERBANK</small></div><div class="world-controls"><span>WASD</span> move <span>SHIFT</span> run <span>WHEEL</span> zoom <span>H</span> character <span>V</span> armor <span>E</span> ride <span>P</span> pause <span>R</span> reset<br><small>1 Meadow 2 Camp 3 Crypt 4 Forge 5 Town 6 Mudgate 7 Village 8 Goblins 9 Orcs 0 Elves · T weather · B fire · Click to walk</small></div><span class="world-telemetry" id="world-stats"></span></div></main>`;
+  document.body.innerHTML = `<main class="river-game"><canvas id="world-canvas" aria-label="Playable ASCII river scene. Move with WASD or tap the ground."></canvas><div class="world-vignette"></div><header class="world-hud"><div><span class="world-kicker">KAGE / THE ASHEN VALLEY</span><h1>The whispering river</h1><p>A quiet road. A watchful blade.</p></div><div class="world-region"><span id="world-region-name">HIGHMERE</span><small id="world-state">KNIGHT · WEATHERED STEEL</small></div></header><div class="world-bottom"><div class="world-health">KAGE <span>[━━━━━━━━━━━━]</span><small id="world-location">RIVERBANK</small></div><details class="world-controls"><summary>Controls <kbd>?</kbd></summary><div><span>WASD</span> move <span>SHIFT</span> run <span>WHEEL</span> zoom <span>H</span> character <span>V</span> armor <span>E</span> ride <span>P</span> pause <span>R</span> reset<br><small>1 Meadow 2 Camp 3 Crypt 4 Forge 5 Town 6 Mudgate 7 Village 8 Goblins 9 Orcs 0 Elves · T weather · B fire · Click to walk</small></div></details><span class="world-telemetry" id="world-stats"></span></div></main>`;
   const canvas = document.getElementById('world-canvas') as HTMLCanvasElement;
   const ctx = canvas.getContext('2d', { alpha: false });
   if (!ctx) throw new Error('Canvas 2D is required');
+  document.querySelector('.river-game')?.classList.toggle('show-debug', new URLSearchParams(location.search).has('debug'));
   const renderer = new AssetRenderer(4, 6);
   // GPU drawing (Three.js) with bloom; ?gpu=0 or a missing WebGL falls back to the CPU blit.
   // The 2D canvas stays on top, invisible, so clicks, wheel and test datasets keep working.
@@ -209,6 +210,10 @@ export function startRiverScene(): void {
     const destination = LANDMARKS.find(area => area.key === event.code);
     if (destination) { hero.x = destination.spawnX; hero.y = destination.spawnY; hero.vx = 0; hero.vy = 0; horse.x = hero.x + 27; horse.y = hero.y + 16; target = null; mounted = false; }
     if (event.code === 'KeyP' || event.code === 'Escape') setPaused(!paused);
+    if (event.code === 'Slash') {
+      const controls = document.querySelector<HTMLDetailsElement>('.world-controls');
+      if (controls) controls.open = !controls.open;
+    }
     if (event.code === 'KeyB') {
       // Set the nearest building alight (or put it out).
       const near = instances.filter(i => BURNABLE.has(baseId(i.asset.id))).sort((a, b) => Math.hypot(a.x - hero.x, a.y - hero.y) - Math.hypot(b.x - hero.x, b.y - hero.y))[0];
@@ -538,7 +543,7 @@ export function startRiverScene(): void {
     }
     setText(document.getElementById('world-location'), 'location', waterDepth(hero.x, hero.y) > 0 ? 'WADING · RIVER CURRENT' : 'RIVERBANK · WIND MEADOW');
     setText(document.getElementById('world-state'), 'state', `${paused ? 'PAUSED' : playable[playerIndex].name.toUpperCase()} · ${playable[playerIndex].variants[hero.variant].toUpperCase()}`);
-    setText(document.querySelector('.world-region')?.firstChild, 'region', regionAt(hero.x, hero.y).toUpperCase());
+    setText(document.getElementById('world-region-name'), 'region', regionAt(hero.x, hero.y).toUpperCase());
     // Read-only diagnostics for browser smoke tests; ~20 Hz avoids per-frame attribute churn.
     if (now - lastDiagnostics > 50) {
       lastDiagnostics = now;

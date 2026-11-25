@@ -343,15 +343,17 @@ export function landscapeCell(x: number, y: number, time: number, seed: number):
     case GROUND.SAND: return { x, y, glyph: n < .4 ? ' ' : n > .92 ? 'o' : n > .72 ? ',' : '.', color: pick(SAND, n * .45 + (depth + 7) * .06) };
     case GROUND.DIRT: {
       const rut = Math.abs(roadAcross - 1.4) < .48;
-      return { x, y, glyph: rut ? ':' : n < .38 ? ' ' : n > .93 ? 'o' : n > .76 ? ',' : '.', color: pick(DIRT, rut ? .08 : n * .55 + .22) };
+      return { x, y, glyph: rut ? ':' : n < .46 ? ' ' : n > .94 ? 'o' : n > .85 ? ',' : n > .74 ? '.' : ' ', color: pick(DIRT, rut ? .08 : n * .5 + .18) };
     }
     case GROUND.COBBLE: {
       const ty = y / 4; const by = Math.floor(ty);
       const tx = x / 5 + (by & 1) * .5; const bx = Math.floor(tx);
       const fx = tx - bx; const fy = ty - by;
-      if (fx < .2 || fy < .25) return { x, y, glyph: n > .55 ? '.' : ' ', color: COBBLE[0] };
+      if (fx < .2 || fy < .25) return { x, y, glyph: ' ', color: COBBLE[0] };
       const b = noise(bx, by, seed + 3);
-      return { x, y, glyph: b > .75 ? 'O' : b > .5 ? '0' : b > .25 ? 'o' : '=', color: pick(COBBLE, .25 + b * .55 + n * .12) };
+      // Quiet paving: broad dark joints and occasional stone marks, not a
+      // screen-filling field of dense O/0 glyphs.
+      return { x, y, glyph: b > .86 ? '.' : b > .68 ? '=' : b > .5 && n > .6 ? ':' : ' ', color: pick(COBBLE, .2 + b * .5 + n * .1) };
     }
     case GROUND.FARM: {
       const row = Math.floor(y / 4.5);
@@ -376,36 +378,36 @@ export function landscapeCell(x: number, y: number, time: number, seed: number):
     }
     case GROUND.FOREST: {
       const m = tint(x, y, seed + 5);
-      return { x, y, glyph: n < .56 ? ' ' : n > .93 ? '`' : n > .84 ? '/' : n > .76 ? '\\' : ',', color: pick(FOREST, m * .75 + n * .25) };
+      return { x, y, glyph: n < .64 ? ' ' : n > .95 ? '`' : n > .9 ? '/' : n > .85 ? '\\' : ',', color: pick(FOREST, m * .7 + n * .22) };
     }
     case GROUND.FLOWER: {
       const c = noise(Math.floor(x / 3), Math.floor(y / 3), seed + 7);
       const m = tint(x, y, seed + 5);
       if (biomeAt(x, y) === BIOME.SAKURA) {
-        if (n > .44 && c > .18) return { x, y, glyph: n > .9 ? '*' : n > .72 ? '.' : ',', color: PETALS[Math.floor(c * 6) % 6] };
-        return { x, y, glyph: n < .35 ? ' ' : "'", color: pick(VALLEY, .2 + m * .45) };
+        if (n > .64 && c > .24) return { x, y, glyph: n > .93 ? '*' : n > .82 ? '.' : ',', color: PETALS[Math.floor(c * 6) % 6] };
+        return { x, y, glyph: n < .48 ? ' ' : "'", color: pick(VALLEY, .2 + m * .4) };
       }
-      if (n > .54 && c > .12) return { x, y, glyph: n > .9 ? '*' : n > .76 ? 'o' : ':', color: BLOOMS[Math.floor(c * 6) % 6] };
-      return { x, y, glyph: n < .42 ? ' ' : "'", color: pick(LUSH, .25 + m * .5) };
+      if (n > .68 && c > .24) return { x, y, glyph: n > .93 ? '*' : n > .84 ? 'o' : ':', color: BLOOMS[Math.floor(c * 6) % 6] };
+      return { x, y, glyph: n < .52 ? ' ' : "'", color: pick(LUSH, .22 + m * .42) };
     }
     case GROUND.TOWN: {
       const m = tint(x, y, seed + 5);
-      return { x, y, glyph: n < .64 ? ' ' : n > .93 ? '"' : "'", color: pick(TOWNGRASS, m * .7 + n * .3) };
+      return { x, y, glyph: n < .72 ? ' ' : n > .95 ? '"' : "'", color: pick(TOWNGRASS, m * .62 + n * .22) };
     }
     case GROUND.CLEAR: {
       const crypt = Math.hypot(x - 220, y - 65) < 115, forge = Math.hypot(x - 185, y - 380) < 125;
-      return { x, y, glyph: n < .4 ? ' ' : n > .97 ? 'o' : n > .86 ? ',' : '.', color: crypt ? '#526071' : forge ? '#7c664b' : '#5c5c47' };
+      return { x, y, glyph: n < .52 ? ' ' : n > .98 ? 'o' : n > .9 ? ',' : '.', color: crypt ? '#526071' : forge ? '#7c664b' : '#5c5c47' };
     }
     default: {
       const biome = biomeAt(x, y);
       const palette = kind === GROUND.MEADOW ? MEADOW : kind === GROUND.FORGE ? AUTUMN : kind === GROUND.CRYPT ? CRYPT : biome === BIOME.VALLEY ? VALLEY : LUSH;
       const m = tint(x, y, seed + 5);
-      const light = n * .28 + m * .62 + .06;
+      const light = n * .26 + m * .58 + .05;
       let glyph: string;
       let color = pick(palette, light);
-      if (n < .52 || (m < .28 && n < .82)) glyph = ' ';
-      else if (kind === GROUND.MEADOW && n > .965) { glyph = ['*', '+', ':'][Math.floor(n * 70) % 3]; color = ['#8b88c4', '#b87d9c', '#bfa86e'][Math.floor(n * 99) % 3]; }
-      else if (n < .66) glyph = "'";
+      if (n < .58 || (m < .3 && n < .84)) glyph = ' ';
+      else if (kind === GROUND.MEADOW && n > .985) { glyph = ['*', '+', ':'][Math.floor(n * 70) % 3]; color = ['#8b88c4', '#b87d9c', '#bfa86e'][Math.floor(n * 99) % 3]; }
+      else if (n < .69) glyph = "'";
       else {
         const i = (x & (COLS - 1));
         if (colTag[i] !== x) { colTag[i] = x; colSin[i] = Math.sin(x * .055); colCos[i] = Math.cos(x * .055); }

@@ -369,7 +369,8 @@ export class AssetRenderer {
       }
       if (layer !== LAYER.actor) { lr *= depth; lg *= depth; lb *= depth; }
       lr += sun * sr; lg += sun * sg; lb += sun * sb;
-      if (lights) { lr += this.lightR[i]; lg += this.lightG[i]; lb += this.lightB[i]; }
+      // Overlapping lamps/fire cannot stack into an unlimited white exposure.
+      if (lights) { lr += Math.min(1.25, this.lightR[i]); lg += Math.min(1.25, this.lightG[i]); lb += Math.min(1.25, this.lightB[i]); }
 
       // Background: the ground material under everything that is not a solid object.
       let bgDef = defs[layer === LAYER.prop || layer === LAYER.actor ? ids[i] : under[i]];

@@ -15,8 +15,13 @@ else that is good (black world, lit models, warm lamp light, readable silhouette
 - Colour is `col / max(channel)` → dim cells become fully saturated rainbow dots.
 - One ramp for everything → grass, roofs, trees, stone all look the same; foliage becomes
   repeating `+=+=` columns.
-- Thin geometry (blades, leaves) flips glyphs every frame while walking: ~16% of pixels change
-  per frame while walking; 0.7% standing still.
+- Thin geometry (blades, leaves) flips glyphs while walking. Claude already made the scene
+  target exactly 2×2 texels per cell and snaps the ortho cameras to whole cells (keep both!):
+  pixels changing per frame went 16% → 10.7% walking, 0.72% → 0.34% standing still.
+- Three views now (V): isometric, top-down, third-person (perspective, smooth, not snapped —
+  it needs your temporal stability most). N toggles day/night; the day sky becomes a wall of
+  glyphs — sky and flat bright areas need a calm treatment too.
+- The owner felt **dizzy** walking: "with movement grass changes and stuff".
 
 ## Do this, in order, checking the screen after each step
 1. **Symbol-only glyph sets.** No letters at default zoom. Start from e.g.

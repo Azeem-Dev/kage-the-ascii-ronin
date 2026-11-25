@@ -5,8 +5,10 @@ import { place } from './assets';
 export interface World {
   /** Resolves when every model is placed. */
   ready: Promise<void>;
-  /** Per frame: wind time, fireflies, moon shadow follows the camera target. */
-  update(t: number, camTarget: THREE.Vector3): void;
+  /** Per frame: wind time, fireflies, shadow light follows the camera target, sky follows the camera. */
+  update(t: number, camTarget: THREE.Vector3, camera: THREE.Camera): void;
+  /** Day (sun, blue sky) or night (moon, stars). */
+  setDay(day: boolean): void;
   /** True on the square or the road (no grass, no trees). */
   onPath(x: number, z: number): boolean;
   /** Solid obstacles on the ground (buildings, trees, rocks, props) as circles; actors slide around them. */
@@ -18,9 +20,11 @@ export interface Collider { x: number; z: number; r: number }
 export function createWorld(scene: THREE.Scene): World {
   scene.background = new THREE.Color(0x000000);
   scene.fog = new THREE.FogExp2(0x000000, .02);
+  const tmp = new THREE.Vector3();
 
   /* lights: moon, sky, warm pools */
-  scene.add(new THREE.HemisphereLight(0x3a5684, 0x000000, .55));
+  const hemi = new THREE.HemisphereLight(0x3a5684, 0x000000, .55);
+  scene.add(hemi);
   const moon = new THREE.DirectionalLight(0xb4cbff, 3.0);
   moon.castShadow = true;
   moon.shadow.mapSize.set(2048, 2048);
@@ -28,7 +32,38 @@ export function createWorld(scene: THREE.Scene): World {
   moon.shadow.camera.near = 1; moon.shadow.camera.far = 90;
   moon.shadow.bias = -.0006; moon.shadow.normalBias = .03;
   scene.add(moon, moon.target);
-  const moonOffset = new THREE.Vector3(-14, 26, 9);
+  // Low moon (~30° up) so it is visible in the sky from the third-person view; long shadows.
+  const moonOffset = new THREE.Vector3(-24, 16, 12);
+  const sunOffset = new THREE.Vector3(18, 30, -10);
+
+  /* sky: moon/sun discs and stars, kept around the camera, never fogged */
+  const skyDist = 280;
+  const moonDisc = new THREE.Mesh(new THREE.CircleGeometry(9, 32), new THREE.MeshBasicMaterial({ color: 0xe8f0ff, fog: false }));
+  const moonGlow = new THREE.Mesh(new THREE.CircleGeometry(20, 32), new THREE.MeshBasicMaterial({ color: 0x2a3a5a, fog: false, transparent: true, opacity: .5, depthWrite: false }));
+  const sunDisc = new THREE.Mesh(new THREE.CircleGeometry(11, 32), new THREE.MeshBasicMaterial({ color: 0xfff2c8, fog: false }));
+  const stars = (() => {
+    let seed = 5; const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+    const n = 900; const p = new Float32Array(n * 3);
+    for (let i = 0; i < n; i++) {
+      const a = rnd() * Math.PI * 2; const e = Math.asin(.05 + rnd() * .95);
+      p[i * 3] = Math.cos(a) * Math.cos(e) * skyDist; p[i * 3 + 1] = Math.sin(e) * skyDist; p[i * 3 + 2] = Math.sin(a) * Math.cos(e) * skyDist;
+    }
+    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(p, 3));
+    return new THREE.Points(g, new THREE.PointsMaterial({ color: 0xbfd0ff, size: 2, sizeAttenuation: false, fog: false }));
+  })();
+  for (const o of [moonDisc, moonGlow, sunDisc, stars]) { o.renderOrder = -1; scene.add(o); }
+  let isDay = false;
+  const night = { bg: new THREE.Color(0x000000), sky: 0x3a5684, hemi: .55 };
+  const day = { bg: new THREE.Color(0x5d86b8), sky: 0xa8c8f0, hemi: 1.4 };
+  const setDay = (d: boolean): void => {
+    isDay = d;
+    const s = d ? day : night;
+    (scene.background as THREE.Color).copy(s.bg); (scene.fog as THREE.FogExp2).color.copy(s.bg);
+    (scene.fog as THREE.FogExp2).density = d ? .008 : .02;
+    hemi.color.setHex(s.sky); hemi.groundColor.setHex(d ? 0x3a4a2a : 0x000000); hemi.intensity = s.hemi;
+    moon.color.setHex(d ? 0xfff1dc : 0xb4cbff); moon.intensity = d ? 3.6 : 3.0;
+    moonDisc.visible = moonGlow.visible = stars.visible = !d; sunDisc.visible = d;
+  };
   const warmLight = (x: number, y: number, z: number, intensity = 24, distance = 10): void => {
     const l = new THREE.PointLight(0xffa857, intensity, distance, 1.6);
     l.position.set(x, y, z); scene.add(l);
@@ -66,13 +101,22 @@ export function createWorld(scene: THREE.Scene): World {
     const mat = new THREE.MeshLambertMaterial({ side: THREE.DoubleSide });
     mat.onBeforeCompile = shader => {
       shader.uniforms.uTime = windUniform;
-      shader.vertexShader = 'uniform float uTime;\n' + shader.vertexShader.replace('#include <begin_vertex>', `#include <begin_vertex>
-        vec4 wp = instanceMatrix * vec4(0., 0., 0., 1.);
-        float gust = sin(uTime * 1.3 + wp.x * .35 + wp.z * .22) * .6 + sin(uTime * 2.7 + wp.x * .9) * .25;
-        transformed.x += gust * position.y * position.y * .55;
-        transformed.z += gust * position.y * position.y * .25;`);
+      // Wind bends the blade in WORLD space, after the instance transform, toward (1,0,-1): that is
+      // sideways on the isometric screen, so blades sway instead of seeming to grow and shrink.
+      // Slow gust fronts travel across the field; between gusts the grass is almost still.
+      shader.vertexShader = 'uniform float uTime;\n' + shader.vertexShader.replace('#include <project_vertex>', `
+        vec4 mvPosition = instanceMatrix * vec4(transformed, 1.0);
+        vec3 root = (instanceMatrix * vec4(0., 0., 0., 1.)).xyz;
+        float bladeH = length(instanceMatrix[1].xyz);
+        float front = sin(uTime * .7 - dot(root.xz, vec2(.09, .05)));
+        float gust = front * front * front;              // mostly calm, short pushes
+        float bend = (.08 + .22 * gust) * bladeH * position.y * position.y;
+        mvPosition.xyz += vec3(.7071, 0., -.7071) * bend;
+        mvPosition.y -= abs(bend) * .35 * position.y;    // bent blades get shorter, not longer
+        mvPosition = modelViewMatrix * mvPosition;
+        gl_Position = projectionMatrix * mvPosition;`);
     };
-    const count = 70000;
+    const count = 45000;
     const grass = new THREE.InstancedMesh(blade, mat, count);
     const m = new THREE.Matrix4(); const q = new THREE.Quaternion(); const s = new THREE.Vector3(); const p = new THREE.Vector3();
     const c = new THREE.Color(); let n = 0;
@@ -83,8 +127,8 @@ export function createWorld(scene: THREE.Scene): World {
       const patch = Math.sin(x * .21 + Math.sin(z * .13) * 2) * Math.cos(z * .17 - x * .05);
       if (rnd() > .35 + patch * .55) continue;
       q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), rnd() * Math.PI);
-      const h = .45 + rnd() * .7 + (patch > .3 ? .35 : 0);
-      s.set(.06, h, .06); p.set(x, 0, z);
+      const h = .18 + rnd() * .22 + (patch > .3 ? .1 : 0);   // ankle-to-shin height next to 1.8 m people
+      s.set(.1, h, .1); p.set(x, 0, z);    // wide enough to cover whole scene texels (stable glyphs)
       m.compose(p, q, s); grass.setMatrixAt(n, m);
       c.setHSL(.26 + rnd() * .09, .6 + rnd() * .25, .26 + rnd() * .24); grass.setColorAt(n, c);
       n++;
@@ -94,7 +138,7 @@ export function createWorld(scene: THREE.Scene): World {
     const flowers = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(.07, 0), new THREE.MeshStandardMaterial({ roughness: .6, emissive: 0x1a0c22 }), 900);
     for (let i = 0; i < 900; i++) {
       let x = 0; let z = 0; do { x = (rnd() - .5) * 60; z = (rnd() - .5) * 60; } while (onPath(x, z));
-      m.compose(p.set(x, .45 + rnd() * .5, z), q.identity(), s.set(1, 1, 1)); flowers.setMatrixAt(i, m);
+      m.compose(p.set(x, .2 + rnd() * .25, z), q.identity(), s.set(.8, .8, .8)); flowers.setMatrixAt(i, m);
       flowers.setColorAt(i, c.setHSL(.75 + rnd() * .15, .6, .55));
     }
     scene.add(flowers);
@@ -158,7 +202,16 @@ export function createWorld(scene: THREE.Scene): World {
     onPath,
     colliders: () => [],   // Agent J: fill from placed models
 
-    update(t, camTarget) {
+    setDay,
+    update(t, camTarget, camera) {
+      // Sky objects sit far away in the light's direction, centred on the camera, facing it.
+      const lightDir = tmp.copy(isDay ? sunOffset : moonOffset).normalize();
+      for (const disc of [moonDisc, moonGlow, sunDisc]) {
+        disc.position.copy(camera.position).addScaledVector(lightDir, skyDist - (disc === moonGlow ? 1 : 0));
+        disc.lookAt(camera.position);
+      }
+      stars.position.copy(camera.position);
+      moon.position.copy(camTarget).addScaledVector(lightDir, 30); moon.target.position.copy(camTarget);
       windUniform.value = t;
       for (let i = 0; i < N; i++) {
         fpos[i * 3] = fbase[i * 3] + Math.sin(t * .5 + i) * .8;
@@ -166,7 +219,6 @@ export function createWorld(scene: THREE.Scene): World {
         fpos[i * 3 + 2] = fbase[i * 3 + 2] + Math.cos(t * .4 + i) * .8;
       }
       fgeo.attributes.position.needsUpdate = true;
-      moon.position.copy(camTarget).add(moonOffset); moon.target.position.copy(camTarget);
     },
   };
 }

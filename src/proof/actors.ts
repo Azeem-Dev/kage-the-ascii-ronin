@@ -7,6 +7,8 @@ export interface Actors {
   ready: Promise<void>;
   /** Hero position (camera follows it); null until loaded. */
   heroPosition(): THREE.Vector3 | null;
+  /** Hero facing (rotation about Y, radians; 0 = facing +Z). */
+  heroHeading(): number;
   /** `move` is a screen-relative world-space direction (length 0 or 1). */
   update(t: number, dt: number, move: THREE.Vector3, run: boolean, colliders: readonly Collider[]): void;
 }
@@ -38,6 +40,7 @@ export function createActors(scene: THREE.Scene): Actors {
   return {
     ready: build(),
     heroPosition: () => hero?.root.position ?? null,
+    heroHeading: () => hero?.root.rotation.y ?? 0,
     update(t, dt, move, run) {
       if (hero) {
         if (move.lengthSq() > 0) {

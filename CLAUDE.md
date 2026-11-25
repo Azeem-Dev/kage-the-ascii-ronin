@@ -98,11 +98,27 @@ Current 2D stack (since the 3D rejection): GPU drawing via `src/render/gpuPresen
 `src/game/weather.ts` (T cycles, B burns nearest building), swaying grass strands in
 `src/render/terrainLayer.ts`.
 
+## Visual target and look pipeline (2026-11-25) — read this first
+
+Full spec, rejected approaches and phases: `artifacts/CLAUDE_MASTER_PROMPT.md` (identical to
+`CHATGPT_MASTER_PROMPT.md`). Reference frame sheets: `artifacts/preview/motivation-review/*.jpg`.
+Target: near-black world revealed by light, fine glyphs read as texture, blade grass, 3D models
+converted to ASCII, one bright subject, colour per category, rain/specks/haze.
+
+- Characters: three.js models → glyph cells (`src/assets/voxel/threePerson.ts`), registered in
+  `riverScene.ts`; Node tests use the voxel fallback (`voxelPerson.ts`).
+- Houses: voxel models ray-marched at final size (`voxel.ts`, `voxelHouse.ts`).
+- `AsciiAsset.generateAt(options, scale)` renders at final size; `AssetCache` prefers it.
+- Presenter shader does blade grass, paved ground, cool grade, light pool, haze.
+- Open problems: FPS below target (move CPU shade/blit to GPU), scan-line stripes at 3×5 px
+  cells, hero/horse/trees/animals/stalls still flat sprites.
+
 ## Rules the owner has set
 
 - Show results in the running game; no approval dashboards or per-asset review UIs.
 - Never hide or thin trees by zoom. Keep world sampling deterministic (no flicker).
-- No WebGL, no runtime image files; assets are glyph cells.
+- No runtime image files; assets end up as glyph cells. (WebGL/three.js is now allowed and used:
+  the owner asked for "3d models as base + ascii shader above".)
 - Must hold ~60 FPS at 1920×1080, including zoomed out. Measure, don't assume.
 - Owner wants: better engine, colourful environment, many large assets (goblins, orcs,
   elves, dwarves, towns, villages, outskirts, poor and rich people), physics
